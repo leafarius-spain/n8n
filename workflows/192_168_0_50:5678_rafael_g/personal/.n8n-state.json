@@ -1,0 +1,53 @@
+{
+  "workflows": {
+    "2qYQ1PxmsJhWhT1q": {
+      "lastSyncedHash": "b9d3754c018df67e7f759fb3d5e0376396d8eaea573fd982a295c6c324870773",
+      "lastSyncedAt": "2026-04-08T19:05:38.021Z",
+      "filename": "My workflow.workflow.ts"
+    },
+    "fPYnVV0bwIW4GpfH": {
+      "lastSyncedHash": "275d6537f080d8a8aaea1899c91854862444467aef3e5f2222c335909553696e",
+      "lastSyncedAt": "2026-04-07T13:24:13.817Z",
+      "filename": "My workflow copy.workflow.ts"
+    },
+    "lAT4oN5zdIdvEvG6": {
+      "lastSyncedAt": "2026-04-08T10:15:43.063Z",
+      "filename": "My workflow copy.workflow.ts"
+    },
+    "eE0zwAWao7Axsdi9": {
+      "lastSyncedHash": "c53a0edfb6784661bd5038398db1c1a0741ef5c96aaf77fc5435b72a50effa0d",
+      "lastSyncedAt": "2026-04-08T19:09:41.964Z",
+      "filename": "COMPROBACION TAQUILLA.workflow.ts"
+    },
+    "IkqnFDu34CjPjXBj": {
+      "lastSyncedHash": "fba66a6a7c82bcac8d264b04200c1c888b664715e19f9094393a6d355bd55b3a",
+      "lastSyncedAt": "2026-04-08T18:58:16.135Z",
+      "filename": "ERROR WORKFLOW.workflow.ts"
+    },
+    "kd5ZHojzpJiD5AMn": {
+      "lastSyncedHash": "f454ad93549e2c565b8c167debb58bba62ef1276795d0dfab9c3f8dafde56198",
+      "lastSyncedAt": "2026-04-08T20:04:24.618Z",
+      "filename": "social_ingest_brightdata.workflow.ts"
+    },
+    "Vr4f9GrXTrYIIEtp": {
+      "lastSyncedHash": "877fa2c15af522e918d0b61bf4efdf819204f49e1f28360eeb3e11880598b65e",
+      "lastSyncedAt": "2026-04-09T09:45:59.626Z",
+      "filename": "social_media_prepare_download.workflow.ts"
+    },
+    "sPi5BYzQkcIfRIdl": {
+      "lastSyncedHash": "8352d8929a19e1363305d50f083c15bc6dd52e6accf474a0fc5607547a590e9d",
+      "lastSyncedAt": "2026-04-09T09:56:32.423Z",
+      "filename": "social_media_analyze.workflow.ts"
+    },
+    "B9X1iY7jFdGCAcK9": {
+      "lastSyncedHash": "40dbf0a1c88110473aa2d9794dd929ce50bf28bf3391fff312c5b61aa33b22c5",
+      "lastSyncedAt": "2026-04-10T00:46:10.015Z",
+      "filename": "social_post_detect_export.workflow.ts"
+    },
+    "K6HNZfFH2GhRglOA": {
+      "lastSyncedHash": "39411634a66c355da737b6e48ce473986249803c18f2b906a2e762255d788682",
+      "lastSyncedAt": "2026-04-09T22:39:59.029Z",
+      "filename": "setup_dic_etiquetas.workflow.ts"
+    }
+  }
+}

@@ -1,0 +1,796 @@
+import { workflow, node, links } from '@n8n-as-code/transformer';
+
+// <workflow-map>
+// Workflow : SCRAPPER FLOWTE
+// Nodes   : 15  |  Connections: 14
+//
+// NODE INDEX
+// ──────────────────────────────────────────────────────────────────
+// Property name                    Node type (short)         Flags
+// SplitOut                           splitOut
+// ExecuteASqlQuery1                  postgres                   [creds]
+// Wait                               wait
+// ScheduleTrigger                    scheduleTrigger
+// LoadPromoterConfig                 postgres                   [creds]
+// NormalizarEventos                  code
+// WhenClickingExecuteWorkflow        manualTrigger
+// InsertNormalizedEvents             postgres                   [creds]
+// Scrape                             firecrawl                  [creds] [retry]
+// WebhookTrigger                     webhook
+// NormalizarTitulo                   code
+// ExecuteASqlQueryFront              postgres                   [creds]
+// Scrape1                            firecrawl                  [creds]
+// ParsearEventos                     code
+// LoopOverItems                      splitInBatches
+//
+// ROUTING MAP
+// ──────────────────────────────────────────────────────────────────
+// ScheduleTrigger
+//    → LoadPromoterConfig
+const MONTHS = {
+  JAN: '01', ENERO: '01',
+  FEB: '02', FEBRERO: '02',
+  MAR: '03', MARZO: '03',
+  APR: '04', ABR: '04', ABRIL: '04',
+  MAY: '05', MAYO: '05',
+  JUN: '06', JUNIO: '06',
+  JUL: '07', JULIO: '07',
+  AUG: '08', AGO: '08', AGOSTO: '08',
+  SEP: '09', SEPT: '09', SEPTIEMBRE: '09',
+  OCT: '10', OCTUBRE: '10',
+  NOV: '11', NOVIEMBRE: '11',
+  DEC: '12', DIC: '12', DICIEMBRE: '12',
+};
+
+function normalizeText(value) {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function formatDate(year, monthToken, day) {
+  const month = MONTHS[monthToken] || '';
+  if (!year || !month || !day) return '';
+  return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+}
+
+function estimateSessions(startDate, endDate) {
+  if (!startDate) return null;
+  if (!endDate) return 1;
+  const start = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
+  return Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+}
+
+function parseDateTimeText(originalText) {
+  const datetimeTextOriginal = (originalText || '').replace(/\s+/g, ' ').trim();
+  const normalized = normalizeText(datetimeTextOriginal);
+  const timeMatches = Array.from(normalized.matchAll(/\b(\d{1,2}:\d{2})\b/g)).map((match) => match[1]);
+  const uniqueTimes = Array.from(new Set(timeMatches));
+
+  if (!normalized) {
+    return {
+      datetime_text_original: '',
+      fecha_inicio: '',
+      fecha_fin: '',
+      hora_inicio: '',
+      tipo_fecha: 'texto_no_parseable',
+      num_sesiones_estimadas: null,
+      tiene_multiples_sesiones: false,
+    };
+  }
+
+  if (uniqueTimes.length > 1) {
+    return {
+      datetime_text_original: datetimeTextOriginal,
+      fecha_inicio: '',
+      fecha_fin: '',
+      hora_inicio: '',
+      tipo_fecha: 'multiple_sesiones',
+      num_sesiones_estimadas: null,
+      tiene_multiples_sesiones: true,
+    };
+  }
+
+  let dateMatches = Array.from(normalized.matchAll(/(?:MON|TUE|WED|THU|FRI|SAT|SUN|LUN|MAR|MIE|JUE|VIE|SAB|DOM)?\s*(\d{1,2})\s+(JAN|ENERO|FEB|FEBRERO|MAR|MARZO|APR|ABR|ABRIL|MAY|MAYO|JUN|JUNIO|JUL|JULIO|AUG|AGO|AGOSTO|SEP|SEPT|SEPTIEMBRE|OCT|OCTUBRE|NOV|NOVIEMBRE|DEC|DIC|DICIEMBRE)\s+(\d{4})/g));
+
+  const spanishRangeSameMonth = normalized.match(/^(\d{1,2})(?:\s+Y\s+(\d{1,2}))?\s+DE\s+(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\s+DE\s+(\d{4})/);
+  if (dateMatches.length === 0 && spanishRangeSameMonth) {
+    const firstDay = spanishRangeSameMonth[1];
+    const secondDay = spanishRangeSameMonth[2] || spanishRangeSameMonth[1];
+    const monthToken = spanishRangeSameMonth[3];
+    const year = spanishRangeSameMonth[4];
+    dateMatches = [
+      ['', firstDay, monthToken, year],
+      ['', secondDay, monthToken, year],
+    ];
+  }
+
+  if (dateMatches.length === 0) {
+    return {
+      datetime_text_original: datetimeTextOriginal,
+      fecha_inicio: '',
+      fecha_fin: '',
+      hora_inicio: uniqueTimes[0] || '',
+      tipo_fecha: 'texto_no_parseable',
+      num_sesiones_estimadas: null,
+      tiene_multiples_sesiones: false,
+    };
+  }
+
+  const uniqueDates = [];
+  for (const match of dateMatches) {
+    const formatted = formatDate(match[3], match[2], match[1]);
+    if (formatted && !uniqueDates.includes(formatted)) {
+      uniqueDates.push(formatted);
+    }
+  }
+
+  if (uniqueDates.length === 0) {
+    return {
+      datetime_text_original: datetimeTextOriginal,
+      fecha_inicio: '',
+      fecha_fin: '',
+      hora_inicio: uniqueTimes[0] || '',
+      tipo_fecha: 'texto_no_parseable',
+      num_sesiones_estimadas: null,
+      tiene_multiples_sesiones: false,
+    };
+  }
+
+  const fechaInicio = uniqueDates[0];
+  const fechaFin = uniqueDates.length > 1 ? uniqueDates[uniqueDates.length - 1] : fechaInicio;
+  const horaInicio = uniqueTimes[0] || '';
+  const tipoFecha = uniqueDates.length > 1 && horaInicio ? 'rango_misma_hora' : 'simple';
+
+  return {
+    datetime_text_original: datetimeTextOriginal,
+    fecha_inicio: fechaInicio,
+    fecha_fin: fechaFin,
+    hora_inicio: horaInicio,
+    tipo_fecha: tipoFecha,
+    num_sesiones_estimadas: estimateSessions(fechaInicio, fechaFin),
+    tiene_multiples_sesiones: false,
+  };
+}
+
+function extractDateTimeText($, observacionText) {
+  const selectorCandidates = [
+    $('span.in-event-date-new').first().text().trim(),
+    $('span.in-product-event-date').first().text().trim(),
+    $('[class*="event-date"]').first().text().trim(),
+  ].filter(Boolean);
+
+  if (selectorCandidates.length > 0) {
+    return selectorCandidates[0];
+  }
+
+  const collapsedObservacion = (observacionText || '').replace(/\s+/g, ' ').trim();
+  if (!collapsedObservacion) {
+    return '';
+  }
+
+  const englishPrefix = collapsedObservacion.match(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}\s+\d{1,2}:\d{2}/i);
+  if (englishPrefix) {
+    return englishPrefix[0];
+  }
+
+  const spanishPrefix = collapsedObservacion.match(/^(\d{1,2}(?:\s+Y\s+\d{1,2})?\s+DE\s+[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+\s+DE\s+\d{4}(?:\s+A\s+LAS\s+\d{1,2}:\d{2}(?:\s+HORAS?)?)?)/i);
+  if (spanishPrefix) {
+    return spanishPrefix[1];
+  }
+
+  return '';
+}
+
+const result = [];
+
+    @node({
+        id: 'normalize-eventos-cheerio',
+        name: 'Normalizar Eventos',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [1488, -496],
+    })
+    NormalizarEventos = {
+        jsCode: `const cheerio = require('cheerio');
+
+const items = $input.all();
+if (!items || items.length === 0) return [];
+
+const MONTHS = {
+  JAN: '01', ENERO: '01',
+  FEB: '02', FEBRERO: '02',
+  MAR: '03', MARZO: '03',
+  APR: '04', ABR: '04', ABRIL: '04',
+  MAY: '05', MAYO: '05',
+  JUN: '06', JUNIO: '06',
+  JUL: '07', JULIO: '07',
+  AUG: '08', AGO: '08', AGOSTO: '08',
+  SEP: '09', SEPT: '09', SEPTIEMBRE: '09',
+  OCT: '10', OCTUBRE: '10',
+  NOV: '11', NOVIEMBRE: '11',
+  DEC: '12', DIC: '12', DICIEMBRE: '12',
+};
+
+function normalizeText(value) {
+  return (value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function formatDate(year, monthToken, day) {
+  const month = MONTHS[monthToken] || '';
+  if (!year || !month || !day) return '';
+  return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+}
+
+function estimateSessions(startDate, endDate) {
+  if (!startDate) return null;
+  if (!endDate) return 1;
+  const start = new Date(startDate + 'T00:00:00Z');
+  const end = new Date(endDate + 'T00:00:00Z');
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
+  return Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+}
+
+function parseDateTimeText(originalText) {
+  const datetimeTextOriginal = (originalText || '').replace(/s+/g, ' ').trim();
+  const normalized = normalizeText(datetimeTextOriginal);
+  const timeMatches = Array.from(normalized.matchAll(/(d{1,2}:d{2})/g)).map((match) => match[1]);
+  const uniqueTimes = Array.from(new Set(timeMatches));
+
+  if (!normalized) {
+    return {
+      datetime_text_original: '',
+      fecha_inicio: '',
+      fecha_fin: '',
+      hora_inicio: '',
+      tipo_fecha: 'texto_no_parseable',
+      num_sesiones_estimadas: null,
+      tiene_multiples_sesiones: false,
+    };
+  }
+
+  if (uniqueTimes.length > 1) {
+    return {
+      datetime_text_original: datetimeTextOriginal,
+      fecha_inicio: '',
+      fecha_fin: '',
+      hora_inicio: '',
+      tipo_fecha: 'multiple_sesiones',
+      num_sesiones_estimadas: null,
+      tiene_multiples_sesiones: true,
+    };
+  }
+
+  const dateMatches = Array.from(normalized.matchAll(/(?:MON|TUE|WED|THU|FRI|SAT|SUN|LUN|MAR|MIE|JUE|VIE|SAB|DOM)?s*(d{1,2})s+(JAN|ENERO|FEB|FEBRERO|MAR|MARZO|APR|ABR|ABRIL|MAY|MAYO|JUN|JUNIO|JUL|JULIO|AUG|AGO|AGOSTO|SEP|SEPT|SEPTIEMBRE|OCT|OCTUBRE|NOV|NOVIEMBRE|DEC|DIC|DICIEMBRE)s+(d{4})/g));
+
+  if (dateMatches.length === 0) {
+    return {
+      datetime_text_original: datetimeTextOriginal,
+      fecha_inicio: '',
+      fecha_fin: '',
+      hora_inicio: uniqueTimes[0] || '',
+      tipo_fecha: 'texto_no_parseable',
+      num_sesiones_estimadas: null,
+      tiene_multiples_sesiones: false,
+    };
+  }
+
+  const uniqueDates = [];
+  for (const match of dateMatches) {
+    const formatted = formatDate(match[3], match[2], match[1]);
+    if (formatted && !uniqueDates.includes(formatted)) {
+      uniqueDates.push(formatted);
+    }
+  }
+
+  if (uniqueDates.length === 0) {
+    return {
+      datetime_text_original: datetimeTextOriginal,
+      fecha_inicio: '',
+      fecha_fin: '',
+      hora_inicio: uniqueTimes[0] || '',
+      tipo_fecha: 'texto_no_parseable',
+      num_sesiones_estimadas: null,
+      tiene_multiples_sesiones: false,
+    };
+  }
+
+  const fechaInicio = uniqueDates[0];
+  const fechaFin = uniqueDates.length > 1 ? uniqueDates[uniqueDates.length - 1] : fechaInicio;
+  const horaInicio = uniqueTimes[0] || '';
+  const tipoFecha = uniqueDates.length > 1 && horaInicio ? 'rango_misma_hora' : 'simple';
+
+  return {
+    datetime_text_original: datetimeTextOriginal,
+    fecha_inicio: fechaInicio,
+    fecha_fin: fechaFin,
+    hora_inicio: horaInicio,
+    tipo_fecha: tipoFecha,
+    num_sesiones_estimadas: estimateSessions(fechaInicio, fechaFin),
+    tiene_multiples_sesiones: false,
+  };
+}
+
+const result = [];
+
+for (let i = 0; i < items.length; i++) {
+  try {
+    const json = items[i].json || {};
+    const data = json.data || {};
+    
+    // Extraer event_id de la URL (metadata.sourceURL o og:url contiene ?e=EVENT_ID)
+    const sourceUrl = (data.metadata && data.metadata.sourceURL) || (data.metadata && data.metadata['og:url']) || '';
+    let eventId = '';
+    const eventMatch = sourceUrl.match(/[?&]e=([^&]+)/);
+    if (eventMatch && eventMatch[1]) {
+      eventId = eventMatch[1];
+    }
+
+    const html = data.html || data.rawHtml || '';
+    const screenshotUrl = data.screenshot || '';
+    const ticketeraUrl = sourceUrl;
+
+    if (html.trim().length < 100) {
+      console.log('Item', i, ': HTML no disponible, saltando');
+      continue;
+    }
+
+    const $ = cheerio.load(html);
+
+    // --- titulo ---
+    const tituloOriginal = $('h3.select-event-name').first().text().trim();
+    const titulo = tituloOriginal;
+
+    // --- local ---
+    const local = $('span.in-product-event-loc').first().text().trim();
+
+    // --- observacion ---
+    const observacion = $('#select-event-desc').text().replace(new RegExp('\\s+', 'g'), ' ').trim();
+
+    // --- fechas + hora ---
+    const dateTimeRaw = extractDateTimeText($, observacion);
+    const parsedDateTime = parseDateTimeText(dateTimeRaw);
+
+    // --- cartel ---
+    // <img id="select-event-img" src="https://...">
+    let cartelUrl = '';
+    $('img').each(function(_, el) {
+      if ($(el).attr('id') === 'select-event-img') {
+        cartelUrl = $(el).attr('src') || '';
+      }
+    });
+
+    // --- es_gratuito ---
+    const descHtml = $('#select-event-desc').html() || '';
+    const es_gratuito = /ENTRADA GRATUITA/i.test(descHtml);
+
+    // --- precios ---
+    // <span class="ticket-price">€<span id="tix-...-price" value="0">0.00</span></span>
+    const prices = [];
+    $('.ticket-price span[id]').each((_, el) => {
+      const val = parseFloat($(el).text().trim());
+      if (!isNaN(val)) prices.push(val);
+    });
+
+    const precio_entradas = prices.length > 0 ? Math.min(...prices) : 0;
+    const precio_medio_entradas = prices.length > 0
+      ? Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100
+      : 0;
+
+    if (!tituloOriginal) {
+      console.log('Item', i, ': Sin titulo, saltando');
+      continue;
+    }
+
+    result.push({
+      json: {
+        event_id: eventId,
+        titulo,
+        titulo_original: tituloOriginal,
+        observacion,
+        datetime_text_original: parsedDateTime.datetime_text_original,
+        fecha_inicio: parsedDateTime.fecha_inicio,
+        fecha_fin: parsedDateTime.fecha_fin,
+        hora_inicio: parsedDateTime.hora_inicio,
+        tipo_fecha: parsedDateTime.tipo_fecha,
+        num_sesiones_estimadas: parsedDateTime.num_sesiones_estimadas,
+        tiene_multiples_sesiones: parsedDateTime.tiene_multiples_sesiones,
+        precio_entradas,
+        precio_medio_entradas,
+        local,
+        es_gratuito,
+        cartel_url: cartelUrl,
+        screenshot_url: screenshotUrl,
+        ticketera_url: ticketeraUrl
+      },
+      pairedItem: { item: i }
+    });
+
+  } catch (err) {
+    console.log('Error en item', i, ':', err.message);
+  }
+}
+
+return result;`,
+    };
+
+    @node({
+        id: 'e93a53c6-8801-4d00-972d-c85b24bc803f',
+        name: 'When clicking ‘Execute workflow’',
+        type: 'n8n-nodes-base.manualTrigger',
+        version: 1,
+        position: [576, -496],
+    })
+    WhenClickingExecuteWorkflow = {};
+
+    @node({
+        id: 'insert-raw-detalle-eventos',
+        name: 'Insert Normalized Events',
+        type: 'n8n-nodes-base.postgres',
+        version: 2.6,
+        position: [1696, -496],
+        credentials: { postgres: { id: 'zKHsX0gkTrNFTpm5', name: 'Postgres account' } },
+    })
+    InsertNormalizedEvents = {
+        operation: 'executeQuery',
+        query: `INSERT INTO raw_detalle_eventos (
+    event_id,
+    titulo,
+    titulo_original,
+    observacion,
+    datetime_text_original,
+    fecha_inicio,
+    fecha_fin,
+    hora_inicio,
+    tipo_fecha,
+    num_sesiones_estimadas,
+    tiene_multiples_sesiones,
+    precio_entradas,
+    precio_medio_entradas,
+    local,
+    es_gratuito,
+    cartel_url,
+    screenshot_url,
+    ticketera_url,
+    payload_json
+)
+VALUES (
+    '{{ $json.event_id }}',
+    '{{ ($json.titulo || "").replace(/'/g, "''") }}',
+  '{{ ($json.titulo_original || "").replace(/'/g, "''") }}',
+    '{{ ($json.observacion || "").replace(/'/g, "''") }}',
+  '{{ ($json.datetime_text_original || "").replace(/'/g, "''") }}',
+  CAST(NULLIF('{{ $json.fecha_inicio }}', '') AS DATE),
+  CAST(NULLIF('{{ $json.fecha_fin }}', '') AS DATE),
+  '{{ $json.hora_inicio || "" }}',
+  '{{ $json.tipo_fecha || "texto_no_parseable" }}',
+  {{ $json.num_sesiones_estimadas ?? 'NULL' }},
+  {{ $json.tiene_multiples_sesiones ? 'true' : 'false' }},
+    {{ $json.precio_entradas || 0 }},
+    {{ $json.precio_medio_entradas || 0 }},
+    '{{ ($json.local || "").replace(/'/g, "''") }}',
+    {{ $json.es_gratuito || false }},
+    '{{ ($json.cartel_url || "").replace(/'/g, "''") }}',
+    '{{ ($json.screenshot_url || "").replace(/'/g, "''") }}',
+    '{{ ($json.ticketera_url || "").replace(/'/g, "''") }}',
+    '{{ JSON.stringify($json).replace(/'/g, "''") }}'::jsonb
+)
+ON CONFLICT (event_id)
+DO UPDATE SET
+    titulo = EXCLUDED.titulo,
+  titulo_original = EXCLUDED.titulo_original,
+    observacion = EXCLUDED.observacion,
+  datetime_text_original = EXCLUDED.datetime_text_original,
+  fecha_inicio = EXCLUDED.fecha_inicio,
+  fecha_fin = EXCLUDED.fecha_fin,
+  hora_inicio = EXCLUDED.hora_inicio,
+  tipo_fecha = EXCLUDED.tipo_fecha,
+  num_sesiones_estimadas = EXCLUDED.num_sesiones_estimadas,
+  tiene_multiples_sesiones = EXCLUDED.tiene_multiples_sesiones,
+    precio_entradas = EXCLUDED.precio_entradas,
+    precio_medio_entradas = EXCLUDED.precio_medio_entradas,
+    local = EXCLUDED.local,
+    es_gratuito = EXCLUDED.es_gratuito,
+    cartel_url = EXCLUDED.cartel_url,
+    screenshot_url = EXCLUDED.screenshot_url,
+    ticketera_url = EXCLUDED.ticketera_url,
+    fecha_captura = NOW();`,
+        options: {},
+    };
+
+    @node({
+        id: '5249cb28-b3ee-4de9-8050-d75be3a0f644',
+        name: '/scrape',
+        type: '@mendable/n8n-nodes-firecrawl.firecrawl',
+        version: 1,
+        position: [1264, -496],
+        credentials: { firecrawlApi: { id: '3FsKPT3ZQeVfmMkM', name: 'Firecrawl account' } },
+        retryOnFail: true,
+        waitBetweenTries: 5000,
+    })
+    Scrape = {
+        operation: 'scrape',
+        url: '={{ $json.event_url }}',
+        scrapeOptions: {
+            options: {
+                formats: {
+                    format: [
+                        {
+                            type: 'html',
+                        },
+                        {
+                            type: 'screenshot',
+                            fullPage: true,
+                            quality: 80,
+                            viewportWidth: 1920,
+                            viewportHeight: 3000,
+                        },
+                    ],
+                },
+                onlyMainContent: false,
+                headers: {},
+                waitFor: 5000,
+                actions: {
+                    items: [
+                        {
+                            milliseconds: 5000,
+                        },
+                    ],
+                },
+                proxy: 'stealth',
+            },
+        },
+        requestOptions: {},
+    };
+
+    @node({
+        id: '21253a55-4a75-4b41-b320-127d3c4a8354',
+        webhookId: 'webhook-scraper-flowte',
+        name: 'Webhook Trigger',
+        type: 'n8n-nodes-base.webhook',
+        version: 1,
+        position: [192, -848],
+    })
+    WebhookTrigger = {
+        httpMethod: 'POST',
+        path: 'test-scraper',
+        options: {},
+    };
+
+    @node({
+        id: 'fase0-normalizar-titulo',
+        name: 'Normalizar Título',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [32, -432],
+    })
+    NormalizarTitulo = {
+        mode: 'runOnceForEachItem',
+        jsCode: `const event = $json["data.data.events"];
+
+if (!event || !event.name) {
+  return $json;
+}
+
+let result = String(event.name).trim();
+
+// Proteger Ñ y ñ antes de normalizar
+result = result
+  .replace(/Ñ/g, '__ENE_MAY__')
+  .replace(/ñ/g, '__ENE_MIN__');
+
+// Quitar acentos
+result = result
+  .normalize('NFD')
+  .replace(/[\\u0300-\\u036f]/g, '');
+
+// Recuperar Ñ
+result = result
+  .replace(/__ENE_MAY__/g, 'Ñ')
+  .replace(/__ENE_MIN__/g, 'ñ');
+
+// Pasar a mayúsculas
+result = result.toUpperCase();
+
+// Permitir letras, números, espacios, Ñ, comas y guiones
+result = result.replace(/[^A-ZÑ0-9,\\- ]/g, '');
+
+// Limpiar espacios
+result = result.replace(/\\s+/g, ' ').trim();
+
+// Guardar en la ruta correcta
+$json["data.data.events"].name = result;
+
+return $json;`,
+    };
+
+    @node({
+        id: 'e9e4bb2e-97ab-475b-ae87-7a42b1bee842',
+        name: 'Execute a SQL query FRONT',
+        type: 'n8n-nodes-base.postgres',
+        version: 2.6,
+        position: [256, -432],
+        credentials: { postgres: { id: 'zKHsX0gkTrNFTpm5', name: 'Postgres account' } },
+    })
+    ExecuteASqlQueryFront = {
+        operation: 'executeQuery',
+        query: `INSERT INTO raw_front_eventos (
+    event_id,
+    name,
+    datetime_text,
+    venue,
+    event_url,
+    source_storefront,
+    payload_json,
+    last_seen
+)
+VALUES (
+    '{{ $json["data.data.events"].event_id }}',
+    '{{ ($json["data.data.events"].name || "").replace(/'/g, "''") }}',
+    '{{ ($json["data.data.events"].datetime_text || "").replace(/'/g, "''") }}',
+    '{{ ($json["data.data.events"].venue || "").replace(/'/g, "''") }}',
+    '{{ ($json["data.data.events"].event_url || "").replace(/'/g, "''") }}',
+    'almeria-cultura-401',
+    '{{ JSON.stringify($json["data.data.events"]).replace(/'/g, "''") }}'::jsonb,
+    NOW()
+)
+ON CONFLICT (event_id)
+DO UPDATE SET
+    name = EXCLUDED.name,
+    datetime_text = EXCLUDED.datetime_text,
+    venue = EXCLUDED.venue,
+    event_url = EXCLUDED.event_url,
+    source_storefront = EXCLUDED.source_storefront,
+    payload_json = EXCLUDED.payload_json,
+    last_seen = NOW();`,
+        options: {},
+    };
+
+    @node({
+        id: '5444ffcb-d2c6-44da-b12a-ea57542ab349',
+        name: '/scrape1',
+        type: '@mendable/n8n-nodes-firecrawl.firecrawl',
+        version: 1,
+        position: [-864, -432],
+        credentials: { firecrawlApi: { id: '3FsKPT3ZQeVfmMkM', name: 'Firecrawl account' } },
+    })
+    Scrape1 = {
+        operation: 'scrape',
+        url: '={{ $json.url_lista }}',
+        scrapeOptions: {
+            options: {
+                formats: {
+                    format: [
+                        {
+                            type: 'html',
+                        },
+                    ],
+                },
+                onlyMainContent: false,
+                headers: {},
+            },
+        },
+        requestOptions: {},
+    };
+
+    @node({
+        id: 'fase0-parsear-eventos',
+        name: 'Parsear Eventos',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [-640, -432],
+    })
+    ParsearEventos = {
+        jsCode: `
+const cheerio = require('cheerio');
+const html = $json.data.html || '';
+
+if (!html) {
+  return { data: { data: { events: [] } } };
+}
+
+const $ = cheerio.load(html);
+const events = [];
+
+// Buscar para cada tarjeta de evento
+$('div.card.mb-4.text-center.events.event-view-card').each((idx, el) => {
+  const $card = $(el);
+  
+  // Extraer nombre del evento
+  const name = $card.find('h5').first().text().trim();
+  
+  // Extraer fecha y hora (estan en small.incard-item-date)
+  const datetime_text = $card.find('small.incard-item-date').first().text().trim();
+  
+  // Extraer venue (despues del icono location-dot)
+  let venue = '';
+  $card.find('small').each((_, smallEl) => {
+    const text = $(smallEl).text();
+    if (text.includes('fa-location-dot') || $(smallEl).prev().hasClass('fa-solid')) {
+      venue = text.replace(/.*fa-location-dot|.*fa-solid.*/, '').trim();
+    }
+  });
+  
+  // Si venue esta vacio, intentar leer el segundo small
+  if (!venue) {
+    const smalls = $card.find('small');
+    if (smalls.length >= 2) {
+      venue = $(smalls[1]).text().trim();
+    }
+  }
+  
+  // Extraer event_id del atributo value o id
+  let event_id = $card.attr('value') || $card.attr('id') || '';
+  if (event_id.startsWith('event_')) {
+    event_id = event_id.replace('event_', '');
+  }
+  
+  // Construir event_url
+  const event_url = event_id ? \`https://www.flowte.me/storefront/almeria-cultura-401?e=\${event_id}\` : '';
+  
+  // Solo agregar si tiene al menos nombre
+  if (name) {
+    events.push({
+      name,
+      event_id: event_id || '',
+      datetime_text: datetime_text || '',
+      venue: venue || '',
+      event_url: event_url || ''
+    });
+  }
+});
+
+return {
+  data: {
+    data: {
+      events
+    }
+  }
+};
+`,
+    };
+
+    @node({
+        id: '572b19c4-a3ba-42e7-b0ec-1b7fc8a44b7f',
+        name: 'Loop Over Items',
+        type: 'n8n-nodes-base.splitInBatches',
+        version: 3,
+        position: [1040, -544],
+    })
+    LoopOverItems = {
+        batchSize: 10,
+        options: {},
+    };
+
+    // =====================================================================
+    // ROUTAGE ET CONNEXIONS
+    // =====================================================================
+
+    @links()
+    defineRouting() {
+        this.WebhookTrigger.out(0).to(this.ExecuteASqlQuery1.in(0));
+        this.ExecuteASqlQuery1.out(0).to(this.LoopOverItems.in(0));
+        this.SplitOut.out(0).to(this.NormalizarTitulo.in(0));
+        this.NormalizarTitulo.out(0).to(this.ExecuteASqlQueryFront.in(0));
+        this.Wait.out(0).to(this.SplitOut.in(0));
+        this.ScheduleTrigger.out(0).to(this.LoadPromoterConfig.in(0));
+        this.LoadPromoterConfig.out(0).to(this.Scrape1.in(0));
+        this.Scrape1.out(0).to(this.ParsearEventos.in(0));
+        this.ParsearEventos.out(0).to(this.Wait.in(0));
+        this.WhenClickingExecuteWorkflow.out(0).to(this.ExecuteASqlQuery1.in(0));
+        this.Scrape.out(0).to(this.NormalizarEventos.in(0));
+        this.NormalizarEventos.out(0).to(this.InsertNormalizedEvents.in(0));
+        this.LoopOverItems.out(1).to(this.Scrape.in(0));
+        this.InsertNormalizedEvents.out(0).to(this.LoopOverItems.in(0));
+    }
+}

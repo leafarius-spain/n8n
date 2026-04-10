@@ -1,0 +1,18 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "npm install": true,
+        "npx --yes n8nac": true,
+        "/^sudo -u postgres psql --no-psqlrc -c \"\\\\l\" \\| cat$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^sudo -u postgres psql -A -t -c \"SELECT datname FROM pg_database WHERE datistemplate = false;\" 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^cd /srv/dev/sgae/n8n && npx --yes n8nac execution get 470 --include-data --json 2>&1 \\| python3 -c \"\nimport json, sys\ndata = json\\.load\\(sys\\.stdin\\)\nexec_data = data\\.get\\('data', data\\)\nif isinstance\\(exec_data, dict\\):\n    rd = exec_data\\.get\\('resultData', \\{\\}\\)\n    err = rd\\.get\\('error', exec_data\\.get\\('error'\\)\\)\n    if err:\n        print\\('NODE:', err\\.get\\('node', \\{\\}\\)\\.get\\('name', 'unknown'\\)\\)\n        print\\('MSG:', err\\.get\\('message', ''\\)\\)\n        msgs = err\\.get\\('messages', \\[\\]\\)\n        if msgs: print\\('DETAIL:', str\\(msgs\\[0\\]\\)\\[:600\\]\\)\n\" 2>&1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

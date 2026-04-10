@@ -1,0 +1,88 @@
+{
+  "name": "ERROR WORKFLOW",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "2c7e51cb-7ec8-467d-b4cc-3d6446cc3271",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $input.item.json || {};\nconst error = payload.error || {};\nconst execution = payload.execution || {};\nconst workflow = payload.workflow || {};\nconst n8nDetails = payload.n8nDetails || error.n8nDetails || {};\n\n// helpers\nconst pickFirst = (...vals) => vals.find(v => v !== undefined && v !== null && String(v).trim() !== '');\nconst toStr = (v) => (v === undefined || v === null) ? '' : (typeof v === 'string' ? v : JSON.stringify(v));\nconst clip = (s, max = 2000) => {\n  const str = toStr(s);\n  return str.length > max ? (str.slice(0, max) + '…[recortado]') : str;\n};\n\n// Fecha\nconst errorDate = new Date().toLocaleString('es-ES', {\n  timeZone: 'Europe/Madrid',\n  year: 'numeric',\n  month: '2-digit',\n  day: '2-digit',\n  hour: '2-digit',\n  minute: '2-digit',\n  second: '2-digit'\n});\n\n// IDs / names\nconst workflowName = pickFirst(workflow.name, payload.workflowName, 'Desconocido');\nconst workflowId = pickFirst(workflow.id, payload.workflowId, 'N/A');\nconst executionId = pickFirst(execution.id, payload.executionId, 'N/A');\nconst executionMode = pickFirst(execution.mode, payload.executionMode, 'N/A');\n\n// Nodo fallido (fallbacks)\nconst failedNode =\n  pickFirst(\n    error?.node?.name,\n    error?.nodeName,\n    error?.context?.nodeName,\n    error?.cause?.node?.name,\n    error?.cause?.nodeName,\n    n8nDetails?.nodeName,\n    'Desconocido'\n  );\n\n// Mensaje (fallbacks)\nconst errorMessage =\n  pickFirst(\n    error?.message,\n    error?.cause?.message,\n    error?.description,\n    payload?.errorMessage,\n    payload?.errorDescription,\n    payload?.errorDetails?.rawErrorMessage?.[0],\n    error?.errorDetails?.rawErrorMessage?.[0],\n    n8nDetails?.stackTrace?.[0],\n    'Sin mensaje de error'\n  );\n\nconst errorDescription =\n  pickFirst(\n    error?.description,\n    payload?.errorDescription,\n    ''\n  );\n\n// Tipo / código HTTP si existe\nconst httpCode =\n  pickFirst(\n    payload?.errorDetails?.httpCode,\n    error?.errorDetails?.httpCode,\n    n8nDetails?.httpCode,\n    ''\n  );\n\nconst errorType =\n  pickFirst(\n    error?.name,\n    payload?.name,\n    (n8nDetails?.stackTrace?.[0] || '').split(':')[0],\n    ''\n  );\n\n// Stack recortado\nconst errorStack =\n  clip(\n    pickFirst(\n      error?.stack,\n      error?.cause?.stack,\n      n8nDetails?.stackTrace ? n8nDetails.stackTrace.join('\\n') : ''\n    ),\n    4000\n  );\n\n// Dump recortado (para que nunca venga vacío)\nconst rawDump = clip(error, 4000);\n\n// URL ejecución (UI)\nconst n8nUrl = 'https://n8n.finanzia2.com';\nconst executionUrl = `${n8nUrl}/executions/${executionId}`;\n\nreturn {\n  json: {\n    errorDate,\n    workflowName,\n    workflowId,\n    executionId,\n    executionMode,\n    failedNode,\n    errorType,\n    httpCode,\n    errorMessage,\n    errorDescription,\n    errorStack,\n    executionUrl,\n    rawDump\n  }\n};\n"
+      },
+      "id": "2da9b97c-e91f-4def-b6a5-fbf4700cc03a",
+      "name": "Format Error Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "rfguerrero@gmail.com",
+        "subject": "=🚨 ERROR en n8n: {{ $json.workflowName }}",
+        "message": "=<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n    .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n    .header { background-color: #dc3545; color: white; padding: 20px; border-radius: 5px 5px 0 0; }\n    .content { background-color: #f8f9fa; padding: 20px; border: 1px solid #dee2e6; }\n    .error-box { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 15px 0; }\n    .info-table { width: 100%; border-collapse: collapse; margin: 15px 0; }\n    .info-table td { padding: 10px; border-bottom: 1px solid #dee2e6; }\n    .info-table td:first-child { font-weight: bold; width: 30%; background-color: #e9ecef; }\n    .button { display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; margin: 15px 0; }\n    .stack-trace { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 10px; font-family: monospace; font-size: 12px; overflow-x: auto; max-height: 200px; overflow-y: auto; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1>⚠️ Error en n8n Workflow</h1>\n      <p style=\"margin: 0;\">Se ha detectado un error en la ejecución de un workflow</p>\n    </div>\n    \n    <div class=\"content\">\n      <h2>📋 Información del Error</h2>\n      \n      <table class=\"info-table\">\n        <tr>\n          <td>🕐 Fecha y Hora</td>\n          <td>{{ $json.errorDate }}</td>\n        </tr>\n        <tr>\n          <td>📊 Workflow</td>\n          <td>{{ $json.workflowName }}</td>\n        </tr>\n        <tr>\n          <td>🔴 Nodo con Error</td>\n          <td>{{ $json.failedNode }}</td>\n        </tr>\n        <tr>\n          <td>🆔 Execution ID</td>\n          <td>{{ $json.executionId }}</td>\n        </tr>\n        <tr>\n          <td>⚙️ Modo de Ejecución</td>\n          <td>{{ $json.executionMode }}</td>\n        </tr>\n      </table>\n      \n      <div class=\"error-box\">\n        <h3>❌ Mensaje de Error:</h3>\n        <p><strong>{{ $json.errorMessage }}</strong></p>\n        {{ $json.errorDescription ? '<p>' + $json.errorDescription + '</p>' : '' }}\n      </div>\n      \n      <a href=\"{{ $json.executionUrl }}\" class=\"button\">🔍 Ver Ejecución en n8n</a>\n      \n      {{ $json.errorStack ? '<h3>📝 Stack Trace:</h3><div class=\"stack-trace\">' + $json.errorStack + '</div>' : '' }}\n      \n      <hr style=\"margin: 30px 0; border: none; border-top: 1px solid #dee2e6;\">\n      \n      <p style=\"color: #6c757d; font-size: 12px;\">\n        Este email fue generado automáticamente por el Error Workflow de n8n.<br>\n        <strong>n8n Instance:</strong> {{ $json.workflowId }}\n      </p>\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "id": "b22aa25d-518c-4ed0-bbb1-2abef2e36739",
+      "name": "Send Error Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        336,
+        -64
+      ],
+      "webhookId": "94ae4f79-f097-4bfd-bb87-0fc4654e78d0",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GlDp25cBAwaJXZwO",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Data": {
+      "main": [
+        [
+          {
+            "node": "Send Error Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "18bb7474-0659-4a4a-b7f3-5cda591a2498",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "923f15ada7d8eeaf9542104adca7114d55210f66be6d95a96ae281c5d2b997e0"
+  },
+  "id": "heUf6hUOfjkJPR7J",
+  "tags": []
+}
