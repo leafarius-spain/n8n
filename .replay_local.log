@@ -1,0 +1,4 @@
+Loaded 303 posts from antiguos/brightdata/sd_mnt9v2vl2jkn64i4yr.json
+Batch size: 200 -> 2 request(s)
+Sample keys: about, active_ads_urls, avatar_image_url, content, count_reactions_type, date_posted, delegate_page_id, following, header_image, input, is_page, is_sponsored
+ERROR batch 1/2 HTTP 404: {"code":404,"message":"The requested webhook \"POST social/brightdata/facebook\" is not registered.","hint":"The workflow must be active for a production URL to run successfully. You can activate the workflow using the toggle in the top-right of the editor. Note that unlike test URL calls, production URL calls aren't shown on the canvas (only in the executions list)"}

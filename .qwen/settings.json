@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx *)",
+      "Bash(psql *)",
+      "Bash(cat *)"
+    ]
+  },
+  "$version": 3
+}

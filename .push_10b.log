@@ -1,0 +1,5 @@
+[N8nApiClient] Projects API unavailable or restricted. Using placeholder Personal project fallback in cache.
+- Pushing workflow workflows/192_168_0_50:5678_rafael_g/personal/social_brightdata_trigger.workflow.ts...
+[N8nApiClient] Starting PUT /api/v1/workflows/CHBsMoEVF5Cbc584
+[N8nApiClient] PUT finished in 18ms. Status: 200
+✔ ✔ Pushed workflow workflows/192_168_0_50:5678_rafael_g/personal/social_brightdata_trigger.workflow.ts.

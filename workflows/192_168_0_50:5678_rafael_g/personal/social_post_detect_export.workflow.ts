@@ -1,8 +1,8 @@
 import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
-// Workflow : SOCIAL MEDIA DETECT EXPORT
-// Nodes   : 14  |  Connections: 15
+// Workflow : 50 SOCIAL MEDIA DETECT EXPORT
+// Nodes   : 19  |  Connections: 18
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
@@ -17,6 +17,11 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // SavePostAnalysis                   postgres                   [creds]
 // SaveCandidateEvents                postgres                   [creds]
 // MarkPostsDone                      postgres                   [creds]
+// GetMediaForMove                    postgres                   [creds]
+// BuildMediaMovePaths                code
+// MoveMediaToFinalFolder             executeCommand             [onError→out(1)]
+// UpdateMovedMediaPath               postgres                   [creds]
+// LogMediaMoveError                  postgres                   [creds]
 // FilterExportable                   postgres                   [onError→out(1)] [creds]
 // ExportPostsToSheet                 googleSheets               [creds]
 // ExportCandidatesToSheet            googleSheets               [creds]
@@ -32,16 +37,19 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 //            → SavePostAnalysis
 //              → SaveCandidateEvents
 //                → MarkPostsDone
-//    → FilterExportable
-//      → ExportPostsToSheet
-//        → ExportCandidatesToSheet
-//          → MarkSheetExported
+//                  → GetMediaForMove
+//                    → BuildMediaMovePaths
+//                      → MoveMediaToFinalFolder
+//                        → UpdateMovedMediaPath
+//                       .out(1) → LogMediaMoveError
+//                  → FilterExportable
+//                    → ExportPostsToSheet
+//                      → ExportCandidatesToSheet
+//                        → MarkSheetExported
 // ManualTrigger
 //    → ReadDicEtiquetas (↩ loop)
-//    → FilterExportable (↩ loop)
 // ScheduleTrigger
 //    → ReadDicEtiquetas (↩ loop)
-//    → FilterExportable (↩ loop)
 // </workflow-map>
 
 // =====================================================================
@@ -50,8 +58,8 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 @workflow({
     id: 'B9X1iY7jFdGCAcK9',
-    name: 'SOCIAL MEDIA DETECT EXPORT',
-    active: true,
+    name: '50 SOCIAL MEDIA DETECT EXPORT',
+    active: false,
     settings: {
         timezone: 'Europe/Madrid',
         executionOrder: 'v1',
@@ -62,7 +70,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
         errorWorkflow: 'IkqnFDu34CjPjXBj',
     },
 })
-export class SocialMediaDetectExportWorkflow {
+export class _50SocialMediaDetectExportWorkflow {
     // =====================================================================
     // CONFIGURATION DES NOEUDS
     // =====================================================================
@@ -73,7 +81,7 @@ export class SocialMediaDetectExportWorkflow {
         name: 'Test Webhook',
         type: 'n8n-nodes-base.webhook',
         version: 2,
-        position: [-1280, 160],
+        position: [-1280, -96],
     })
     TestWebhook = {
         path: 'social-detect-export-test',
@@ -85,7 +93,7 @@ export class SocialMediaDetectExportWorkflow {
         name: 'Manual Trigger',
         type: 'n8n-nodes-base.manualTrigger',
         version: 1,
-        position: [-1280, -320],
+        position: [-1280, -480],
     })
     ManualTrigger = {};
 
@@ -94,7 +102,7 @@ export class SocialMediaDetectExportWorkflow {
         name: 'Schedule Trigger',
         type: 'n8n-nodes-base.scheduleTrigger',
         version: 1.3,
-        position: [-1280, -80],
+        position: [-1280, -288],
     })
     ScheduleTrigger = {
         rule: {
@@ -112,7 +120,7 @@ export class SocialMediaDetectExportWorkflow {
         name: 'Read DIC Etiquetas',
         type: 'n8n-nodes-base.googleSheets',
         version: 4.5,
-        position: [-1040, -208],
+        position: [-1056, -288],
         credentials: { googleSheetsOAuth2Api: { id: 'dvmGtqHi4eph1ywU', name: 'Google Sheets account' } },
     })
     ReadDicEtiquetas = {
@@ -142,7 +150,7 @@ export class SocialMediaDetectExportWorkflow {
         name: 'Pack DIC',
         type: 'n8n-nodes-base.code',
         version: 2,
-        position: [-800, -208],
+        position: [-832, -288],
     })
     PackDic = {
         jsCode: `// Collapse N DIC_ETIQUETAS rows into 1 item for downstream reference
@@ -155,10 +163,12 @@ return [{ json: { __DIC_ETIQUETAS: rows, __DIC_COUNT: rows.length } }];`,
         name: 'Get And Lock Posts',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [-560, -208],
+        position: [-608, -288],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
     })
     GetAndLockPosts = {
+        schema: 'public',
+        table: 'social_posts',
         operation: 'executeQuery',
         query: `UPDATE social_posts SET analysis_status = 'DETECT_PROCESSING', updated_at = NOW()
 WHERE id IN (
@@ -213,7 +223,7 @@ RETURNING
         name: 'Classify And Detect',
         type: 'n8n-nodes-base.code',
         version: 2,
-        position: [-320, -208],
+        position: [-384, -288],
     })
     ClassifyAndDetect = {
         jsCode: `// ──────────────────────────────────────────────────────────────────
@@ -257,6 +267,22 @@ function buildFingerprint(etiqueta, aytoId) {
   const e = norm(etiqueta || 'NOEVENTO').slice(0, 40);
   const a = norm(aytoId || 'UNKNOWN').slice(0, 20);
   return e + '::' + a;
+}
+
+// Derive SGAE rights classification (orthogonal to candidate_status).
+// Returns CON_DERECHOS | SIN_DERECHOS | DUDOSO | null (NULL when no event detected).
+function computeRights(candidateStatus, eventType, score, ocrConf, hasDicMatch, hasRelevantSignal) {
+  if (candidateStatus === 'NO_EVENTO') return null;
+  if (candidateStatus === 'DUDA_EVENTO' || candidateStatus === 'REVISION_MANUAL') return 'DUDOSO';
+  if (typeof score === 'number' && score < 0.70) return 'DUDOSO';
+  if (typeof ocrConf === 'number' && ocrConf > 0 && ocrConf < 0.50) return 'DUDOSO';
+  if (!hasDicMatch && hasRelevantSignal) return 'DUDOSO';
+  const et = String(eventType || '').toUpperCase();
+  const SIN = ['SIN DERECHOS', 'SIN_DERECHOS', 'SINDERECHOS'];
+  if (SIN.some(v => et === v) || et.includes('SIN_DERECH') || et.includes('SIN DERECH')) return 'SIN_DERECHOS';
+  const CON = ['VARIEDADES', 'HUMANA', 'DRAMATICOS', 'SINFONICA', 'MECANICA', 'CINE', 'REVISION_HUMANA'];
+  if (CON.includes(et)) return 'CON_DERECHOS';
+  return 'DUDOSO';
 }
 
 // ── Load DIC_ETIQUETAS from PackDic node ──────────────────────────
@@ -422,6 +448,12 @@ for (const item of $input.all()) {
     detectionReason = 'No DIC match and no usable signals';
   }
 
+  const hasDicMatch = Boolean(bestMatch);
+  const hasRelevantSignal = hasText || imgConTextoCount > 0 || mediaHasPhoto;
+  const rightsClassification = computeRights(
+    candidateStatus, eventType, detectionScore, maxOcrConf, hasDicMatch, hasRelevantSignal
+  );
+
   const fingerprint = buildFingerprint(eventName || candidateStatus, post.ayto_id);
   // sheet_export_key is unique per (post, candidate) in the DB; SHEET_KEY in Sheets uses
   // event_fingerprint for cross-post deduplication (same event from reposts merges to one row)
@@ -478,6 +510,7 @@ for (const item of $input.all()) {
     export_to_sheet: exportToSheet,
     needs_review: needsManualReview,
     confidence_score: detectionScore,
+    rights_classification: rightsClassification,
   }});
 }
 
@@ -489,10 +522,12 @@ return results;`,
         name: 'Save Post Analysis',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [-80, -208],
+        position: [-160, -288],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
     })
     SavePostAnalysis = {
+        schema: 'public',
+        table: 'post_analysis',
         operation: 'executeQuery',
         query: `INSERT INTO post_analysis (
   social_post_id, analysis_version, analysis_status,
@@ -534,10 +569,12 @@ RETURNING id AS post_analysis_id, social_post_id, event_detection_status;`,
         name: 'Save Candidate Events',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [160, -208],
+        position: [64, -288],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
     })
     SaveCandidateEvents = {
+        schema: 'public',
+        table: 'candidate_events',
         operation: 'executeQuery',
         query: `INSERT INTO candidate_events (
   social_post_id, post_analysis_id, analysis_version, candidate_index,
@@ -577,17 +614,159 @@ RETURNING id AS candidate_event_id, social_post_id, candidate_status, export_to_
         name: 'Mark Posts Done',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [400, -208],
+        position: [288, -288],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
     })
     MarkPostsDone = {
+        schema: 'public',
+        table: 'social_posts',
         operation: 'executeQuery',
         query: `UPDATE social_posts
 SET analysis_status = 'DETECT_DONE', updated_at = NOW()
 WHERE id = $1::bigint
-RETURNING id, analysis_status;`,
+  RETURNING id AS social_post_id, analysis_status;`,
         options: {
             queryReplacement: '={{ [$("Classify And Detect").item.json.social_post_id] }}',
+        },
+    };
+
+    @node({
+        id: 'detect-get-media-for-move',
+        name: 'Get Media For Move',
+        type: 'n8n-nodes-base.postgres',
+        version: 2.6,
+        position: [512, -192],
+        credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
+    })
+    GetMediaForMove = {
+        schema: 'public',
+        table: 'post_media',
+        operation: 'executeQuery',
+        query: `SELECT
+  pm.id AS media_id,
+  pm.social_post_id,
+  pm.storage_path,
+  COALESCE(pm.media_type, 'IMAGE') AS media_type,
+  COALESCE($2::text, '') AS candidate_status,
+  COALESCE($3::text, '') AS event_type_candidate
+FROM post_media pm
+WHERE pm.social_post_id = $1::bigint
+  AND pm.download_status = 'DOWNLOADED'
+  AND pm.storage_path IS NOT NULL
+  AND POSITION('/sin_clasificar/' IN pm.storage_path) > 0
+ORDER BY pm.media_index ASC;`,
+        options: {
+            queryReplacement:
+                '={{ [$json.social_post_id, $("Classify And Detect").item.json.candidate_status, $("Classify And Detect").item.json.event_type_candidate] }}',
+        },
+    };
+
+    @node({
+        id: 'detect-build-media-move-paths',
+        name: 'Build Media Move Paths',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [736, -192],
+    })
+    BuildMediaMovePaths = {
+        jsCode: `const row = $input.first().json;
+
+const status = String(row.candidate_status || '').toUpperCase();
+const eventType = String(row.event_type_candidate || '').toUpperCase();
+
+let targetFolder = 'sin_clasificar';
+if (eventType.includes('CON_DERECH')) {
+  targetFolder = 'con_derechos';
+} else if (eventType.includes('SIN_DERECH')) {
+  targetFolder = 'sin_derechos';
+} else if (status === 'OK_EVENTO') {
+  targetFolder = 'con_derechos';
+} else if (['DUDA_EVENTO', 'REVISION_MANUAL', 'NO_EVENTO'].includes(status)) {
+  targetFolder = 'sin_derechos';
+}
+
+const sourcePath = String(row.storage_path || '');
+const targetPath = sourcePath.includes('/sin_clasificar/')
+  ? sourcePath.replace('/sin_clasificar/', '/' + targetFolder + '/')
+  : sourcePath;
+
+const targetDir = targetPath.includes('/') ? targetPath.slice(0, targetPath.lastIndexOf('/')) : '';
+
+return {
+  media_id: row.media_id,
+  social_post_id: row.social_post_id,
+  source_path: sourcePath,
+  target_path: targetPath,
+  target_dir: targetDir,
+  target_folder: targetFolder,
+};`,
+    };
+
+    @node({
+        id: 'detect-move-media-file',
+        name: 'Move Media To Final Folder',
+        type: 'n8n-nodes-base.executeCommand',
+        version: 1,
+        position: [960, -192],
+        onError: 'continueErrorOutput',
+    })
+    MoveMediaToFinalFolder = {
+        command:
+            '={{ "mkdir -p \\"" + $json.target_dir + "\\" && if [ -f \\"" + $json.source_path + "\\" ]; then mv \\"" + $json.source_path + "\\" \\"" + $json.target_path + "\\"; fi" }}',
+    };
+
+    @node({
+        id: 'detect-update-moved-media-path',
+        name: 'Update Moved Media Path',
+        type: 'n8n-nodes-base.postgres',
+        version: 2.6,
+        position: [1184, -288],
+        credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
+    })
+    UpdateMovedMediaPath = {
+        schema: 'public',
+        table: 'post_media',
+        operation: 'executeQuery',
+        query: `UPDATE post_media
+SET storage_path = $2::text,
+    updated_at = NOW()
+WHERE id = $1::bigint
+RETURNING id AS media_id, social_post_id, storage_path;`,
+        options: {
+            queryReplacement:
+                '={{ [$("Build Media Move Paths").item.json.media_id, $("Build Media Move Paths").item.json.target_path] }}',
+        },
+    };
+
+    @node({
+        id: 'detect-log-media-move-error',
+        name: 'Log Media Move Error',
+        type: 'n8n-nodes-base.postgres',
+        version: 2.6,
+        position: [1184, -96],
+        credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
+    })
+    LogMediaMoveError = {
+        schema: 'public',
+        table: 'processing_logs',
+        operation: 'executeQuery',
+        query: `INSERT INTO processing_logs
+  (entity_type, entity_id, workflow_name, phase, status, message, details_json)
+VALUES
+  ('media', $1::bigint, 'social_post_detect_export', 'MOVE_MEDIA', 'ERROR', $2::text, $3::jsonb)
+RETURNING id;`,
+        options: {
+            queryReplacement: `={{ [
+  $('Build Media Move Paths').item.json.media_id,
+  'Failed moving media file to classified folder',
+  JSON.stringify({
+    social_post_id: $('Build Media Move Paths').item.json.social_post_id,
+    source_path: $('Build Media Move Paths').item.json.source_path,
+    target_path: $('Build Media Move Paths').item.json.target_path,
+    target_folder: $('Build Media Move Paths').item.json.target_folder,
+    command_output: $json,
+  }),
+] }}`,
         },
     };
 
@@ -596,11 +775,13 @@ RETURNING id, analysis_status;`,
         name: 'Filter Exportable',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [-560, -480],
+        position: [512, -480],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
         onError: 'continueErrorOutput',
     })
     FilterExportable = {
+        schema: 'public',
+        table: 'candidate_events',
         operation: 'executeQuery',
         query: `SELECT
   ce.id AS candidate_event_id,
@@ -628,6 +809,21 @@ RETURNING id, analysis_status;`,
   (SELECT code FROM sources WHERE id = sp.source_id) AS source_code,
   (SELECT account_name FROM publisher_accounts WHERE id = sp.publisher_account_id) AS account_name,
   COALESCE((
+    SELECT string_agg(pm.storage_path, ' | ' ORDER BY pm.media_index)
+    FROM post_media pm
+    WHERE pm.social_post_id = sp.id
+      AND pm.download_status = 'DOWNLOADED'
+      AND pm.storage_path IS NOT NULL
+  ), '') AS media_storage_paths,
+  COALESCE((
+    SELECT string_agg(pm.source_url, ' | ' ORDER BY pm.media_index)
+    FROM post_media pm
+    WHERE pm.social_post_id = sp.id
+      AND pm.download_status = 'DOWNLOADED'
+      AND pm.source_url IS NOT NULL
+      AND pm.source_url <> ''
+  ), '') AS media_source_urls,
+  COALESCE((
     SELECT string_agg(mo.ocr_text_raw, ' | ' ORDER BY pm.media_index)
     FROM post_media pm
     JOIN media_ocr mo ON mo.post_media_id = pm.id
@@ -640,7 +836,7 @@ JOIN social_posts sp ON sp.id = ce.social_post_id
 LEFT JOIN post_analysis pa ON pa.id = ce.post_analysis_id
 WHERE ce.candidate_status IN ('OK_EVENTO', 'DUDA_EVENTO', 'REVISION_MANUAL')
   AND ce.export_to_sheet = true
-  AND ce.sheet_exported_at IS NULL
+  AND ce.sheet_export_status IN ('PENDING', 'ERROR')
 ORDER BY ce.created_at ASC
 LIMIT 50;`,
         options: {},
@@ -651,7 +847,7 @@ LIMIT 50;`,
         name: 'Export Posts To Sheet',
         type: 'n8n-nodes-base.googleSheets',
         version: 4.5,
-        position: [-320, -480],
+        position: [736, -480],
         credentials: { googleSheetsOAuth2Api: { id: 'dvmGtqHi4eph1ywU', name: 'Google Sheets account' } },
     })
     ExportPostsToSheet = {
@@ -685,7 +881,8 @@ LIMIT 50;`,
                 STATUS_DETECCION: '={{ $json.candidate_status }}',
                 MOTIVO_DETECCION: '={{ $json.detection_reason }}',
                 NECESITA_REVISION: '={{ $json.needs_review }}',
-                NOTAS_REVISION: '={{ $json.review_notes }}',
+                NOTAS_REVISION:
+                    '={{ [$json.review_notes, "ORIGEN_CUENTA=" + ($json.account_name || ""), "MEDIA_PATHS=" + ($json.media_storage_paths || ""), "MEDIA_URLS=" + ($json.media_source_urls || "")].filter(v => String(v || "").trim() !== "").join(" | ").slice(0, 500) }}',
                 EVENT_FINGERPRINT: '={{ $json.event_fingerprint }}',
                 FECHA_CREACION: '={{ $now }}',
             },
@@ -820,7 +1017,7 @@ LIMIT 50;`,
         name: 'Export Candidates To Sheet',
         type: 'n8n-nodes-base.googleSheets',
         version: 4.5,
-        position: [-80, -480],
+        position: [960, -480],
         credentials: { googleSheetsOAuth2Api: { id: 'dvmGtqHi4eph1ywU', name: 'Google Sheets account' } },
     })
     ExportCandidatesToSheet = {
@@ -851,9 +1048,11 @@ LIMIT 50;`,
                 TIPO_EVENTO_CANDIDATO: '={{ $json.event_type_candidate }}',
                 MUNICIPIO_CANDIDATO: '={{ $json.municipio_candidate }}',
                 SOURCE_DETECTION: '={{ $json.source_detection }}',
-                MOTIVO_DETECCION: '={{ $json.detection_reason }}',
+                MOTIVO_DETECCION:
+                    '={{ ["STATUS=" + ($json.candidate_status || ""), $json.detection_reason, "POST_URL=" + ($json.post_url || "")].filter(v => String(v || "").trim() !== "").join(" | ").slice(0, 500) }}',
                 NECESITA_REVISION: '={{ $json.needs_review }}',
-                NOTAS_REVISION: '={{ $json.review_notes }}',
+                NOTAS_REVISION:
+                    '={{ [$json.review_notes, "FUENTE=" + ($json.source_code || ""), "ORIGEN_CUENTA=" + ($json.account_name || ""), "MEDIA_PATHS=" + ($json.media_storage_paths || ""), "MEDIA_URLS=" + ($json.media_source_urls || "")].filter(v => String(v || "").trim() !== "").join(" | ").slice(0, 500) }}',
                 FECHA_CREACION: '={{ $json.created_at_fmt }}',
             },
             matchingColumns: ['SHEET_KEY'],
@@ -969,15 +1168,17 @@ LIMIT 50;`,
         name: 'Mark Sheet Exported',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [160, -480],
+        position: [1184, -480],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
     })
     MarkSheetExported = {
+        schema: 'public',
+        table: 'candidate_events',
         operation: 'executeQuery',
         query: `UPDATE candidate_events
-SET sheet_exported_at = NOW(), updated_at = NOW()
+SET sheet_exported_at = NOW(), sheet_export_status = 'EXPORTED', sheet_export_error = NULL, updated_at = NOW()
 WHERE id = $1::bigint
-RETURNING id, sheet_exported_at;`,
+RETURNING id, sheet_exported_at, sheet_export_status;`,
         options: {
             queryReplacement: '={{ [$("Filter Exportable").item.json.candidate_event_id] }}',
         },
@@ -990,17 +1191,20 @@ RETURNING id, sheet_exported_at;`,
     @links()
     defineRouting() {
         this.TestWebhook.out(0).to(this.ReadDicEtiquetas.in(0));
-        this.TestWebhook.out(0).to(this.FilterExportable.in(0));
         this.ManualTrigger.out(0).to(this.ReadDicEtiquetas.in(0));
-        this.ManualTrigger.out(0).to(this.FilterExportable.in(0));
         this.ScheduleTrigger.out(0).to(this.ReadDicEtiquetas.in(0));
-        this.ScheduleTrigger.out(0).to(this.FilterExportable.in(0));
         this.ReadDicEtiquetas.out(0).to(this.PackDic.in(0));
         this.PackDic.out(0).to(this.GetAndLockPosts.in(0));
         this.GetAndLockPosts.out(0).to(this.ClassifyAndDetect.in(0));
         this.ClassifyAndDetect.out(0).to(this.SavePostAnalysis.in(0));
         this.SavePostAnalysis.out(0).to(this.SaveCandidateEvents.in(0));
         this.SaveCandidateEvents.out(0).to(this.MarkPostsDone.in(0));
+        this.MarkPostsDone.out(0).to(this.GetMediaForMove.in(0));
+        this.MarkPostsDone.out(0).to(this.FilterExportable.in(0));
+        this.GetMediaForMove.out(0).to(this.BuildMediaMovePaths.in(0));
+        this.BuildMediaMovePaths.out(0).to(this.MoveMediaToFinalFolder.in(0));
+        this.MoveMediaToFinalFolder.out(0).to(this.UpdateMovedMediaPath.in(0));
+        this.MoveMediaToFinalFolder.out(1).to(this.LogMediaMoveError.in(0));
         this.FilterExportable.out(0).to(this.ExportPostsToSheet.in(0));
         this.ExportPostsToSheet.out(0).to(this.ExportCandidatesToSheet.in(0));
         this.ExportCandidatesToSheet.out(0).to(this.MarkSheetExported.in(0));

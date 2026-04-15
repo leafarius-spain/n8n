@@ -1,0 +1,496 @@
+{
+  "updatedAt": "2026-04-13T14:21:31.963Z",
+  "createdAt": "2026-04-10T17:42:45.970Z",
+  "id": "CHBsMoEVF5Cbc584",
+  "name": "10 SOCIAL BRIGHTDATA TRIGGER",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "75296ead-d5f7-49f4-895a-d661a8805cd5",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        560
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "1933678a-7965-4aa9-9829-f40c90f99e3c",
+      "name": "Get Active Accounts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        80,
+        560
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "schema": {
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "mode": "list",
+          "value": ""
+        },
+        "query": "SELECT\n  pa.id          AS publisher_account_id,\n  pa.ayto_id,\n  pa.account_name,\n  pa.account_url AS fb_page_url,\n  TO_CHAR(\n    COALESCE(pa.ultimo_post_capturado_fecha::date, pa.fecha_inicio_historico),\n    'MM-DD-YYYY'\n  ) AS start_date,\n  TO_CHAR(NOW()::date, 'MM-DD-YYYY') AS end_date\nFROM publisher_accounts pa\nWHERE pa.is_active = true\n  AND pa.account_url IS NOT NULL\n  AND pa.source_id = 1\nORDER BY pa.id;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "E2XU4m84S5WN82lK",
+          "name": "Postgres social account"
+        }
+      }
+    },
+    {
+      "id": "3a934e55-dd39-415e-81bd-5771c0aa93bb",
+      "name": "Trigger BrightData",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        560
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.brightdata.com/datasets/v3/trigger?dataset_id=gd_lkaxegm826bjpoo9m5&include_errors=true",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify([{ url: $json.fb_page_url, num_of_posts: 10000, start_date: $json.start_date, end_date: $json.end_date }])}}",
+        "options": {
+          "response": {},
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "0rTspKriNsoJizFz",
+          "name": "BRIGHT DATA"
+        }
+      }
+    },
+    {
+      "id": "44738664-6f88-4cd4-b499-5e958ba1d9a3",
+      "name": "Check Progress",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        528,
+        560
+      ],
+      "parameters": {
+        "url": "={{ 'https://api.brightdata.com/datasets/v3/progress/' + $('Trigger BrightData').item.json.snapshot_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "0rTspKriNsoJizFz",
+          "name": "BRIGHT DATA"
+        }
+      }
+    },
+    {
+      "id": "60fa0b6a-ec6e-4b02-befe-004cacff1e03",
+      "name": "Is Ready",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        752,
+        480
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "brightdata-ready-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "ready",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "922c117d-5156-4dcc-bf3b-049b74cb19ef",
+      "webhookId": "ead29979-bdc7-43c8-a7ea-09a8db2fd83d",
+      "name": "Wait Before Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        976,
+        656
+      ],
+      "parameters": {
+        "amount": 360
+      }
+    },
+    {
+      "id": "615fe64f-e9f8-47b7-8f74-4866c265bce4",
+      "name": "Download Snapshot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        976,
+        432
+      ],
+      "parameters": {
+        "url": "={{ 'https://api.brightdata.com/datasets/v3/snapshot/' + $('Trigger BrightData').item.json.snapshot_id + '?format=ndjson' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "0rTspKriNsoJizFz",
+          "name": "BRIGHT DATA"
+        }
+      }
+    },
+    {
+      "id": "b5b18aad-7a5f-4f14-a1b8-f5c0f9eb6583",
+      "name": "Build Snapshot File Path",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        432
+      ],
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst text = item.json.data || item.json.body || '';\nconst snapshotId = String($('Trigger BrightData').item.json.snapshot_id || 'unknown');\nconst aytoRaw = String($('Get Active Accounts').item.json.ayto_id || 'unknown_ayto');\nconst startDate = String($('Get Active Accounts').item.json.start_date || '');\nconst yearFromStart = Number(startDate.slice(0, 4));\nconst year = Number.isFinite(yearFromStart) && yearFromStart > 2000\n    ? String(Math.trunc(yearFromStart))\n    : String(new Date().getFullYear());\n\nconst safeAyto = aytoRaw\n    .trim()\n    .toLowerCase()\n    .replace(/[^a-z0-9._-]+/g, '_')\n    .replace(/^_+|_+$/g, '')\n    .slice(0, 80) || 'unknown_ayto';\n\nconst stamp = new Date().toISOString().replace(/[:.]/g, '-');\nconst filePath = '/srv/storage/redessociales/brightdata/' + safeAyto + '/' + year + '/snapshot_' + snapshotId + '_' + stamp + '.ndjson';\nconst binaryData = await this.helpers.prepareBinaryData(Buffer.from(String(text), 'utf8'), 'snapshot.ndjson', 'text/plain');\n\nreturn {\n    json: {\n        ...item.json,\n        snapshot_file_path: filePath,\n        snapshot_id: snapshotId,\n        snapshot_ayto_id: safeAyto,\n        snapshot_year: year,\n    },\n    binary: {\n        snapshot_data: binaryData,\n    },\n};"
+      }
+    },
+    {
+      "id": "a796fca1-3aa4-4744-a514-52ceb4db5b6a",
+      "name": "Write Snapshot File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        1424,
+        432
+      ],
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.snapshot_file_path }}",
+        "dataPropertyName": "snapshot_data",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "0b401c2e-a835-49a7-b228-0c19d5fca26d",
+      "name": "Convert Ndjson",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1648,
+        432
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const text = $input.item.json.data || $input.item.json.body || '';\n        const snapshotId = $('Trigger BrightData').item.json.snapshot_id || '';\n        const accountId = $('Get Active Accounts').item.json.publisher_account_id;\n        const aytoId = $('Get Active Accounts').item.json.ayto_id;\n        const accountName = $('Get Active Accounts').item.json.account_name;\n        const lines = text.split('\n').filter(l => l.trim());\n        const posts = [];\n        for (const line of lines) {\n            try {\n                const obj = JSON.parse(line);\n                if (obj && (obj.url || obj.post_url || obj.post_id || obj.id)) {\n                    obj._ayto_id = aytoId;\n                    obj._account_name = accountName;\n                    obj._publisher_account_id = accountId;\n                    posts.push(obj);\n                }\n            } catch (e) { /* skip malformed lines */ }\n        }\n        return [{ json: { posts, snapshot_id: snapshotId, publisher_account_id: accountId } }];"
+      }
+    },
+    {
+      "id": "a0672532-8104-4682-9162-5ac99d743d41",
+      "name": "Send To Ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1872,
+        432
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://ingesta.sistechvision.online/webhook/social/brightdata/facebook",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.posts) }}",
+        "options": {
+          "response": {},
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "65567d6a-4935-436a-a96e-f9db27046420",
+      "name": "Log Trigger",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        2096,
+        432
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "schema": {
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "mode": "list",
+          "value": "processing_logs"
+        },
+        "query": "INSERT INTO processing_logs\n  (entity_type, entity_id, workflow_name, phase, status, message, details_json)\nVALUES (\n  'publisher_account',\n  $1::bigint,\n  'social_brightdata_trigger',\n  'INGEST_TRIGGER',\n  $2,\n  $3,\n  $4::jsonb\n)\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [\n  Number($('Get Active Accounts').item.json.publisher_account_id),\n  ($input.first().json.statusCode || 200) < 400 ? 'SUCCESS' : 'ERROR',\n  'BrightData trigger: ' + $('Get Active Accounts').item.json.account_name + ' | start=' + $('Get Active Accounts').item.json.start_date + ' | end=' + $('Get Active Accounts').item.json.end_date,\n  JSON.stringify({\n    ayto_id: $('Get Active Accounts').item.json.ayto_id,\n    fb_page_url: $('Get Active Accounts').item.json.fb_page_url,\n    start_date: $('Get Active Accounts').item.json.start_date,\n    end_date: $('Get Active Accounts').item.json.end_date,\n        snapshot_file_path: ($('Build Snapshot File Path').item.json.snapshot_file_path || ''),\n    brightdata_response: $input.first().json,\n  })\n] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "E2XU4m84S5WN82lK",
+          "name": "Postgres social account"
+        }
+      }
+    },
+    {
+      "id": "4372ada0-f097-4767-911c-47877f34bb8b",
+      "name": "Summarize Trigger",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2320,
+        432
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst ok = items.filter(i => (i.json.statusCode || 200) < 400).length;\nconsole.log(`BrightData trigger: ${ok}/${items.length} accounts OK`);\nreturn [{ json: { triggered_ok: ok, triggered_error: items.length - ok, total: items.length, triggered_at: new Date().toISOString() } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Active Accounts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Accounts": {
+      "main": [
+        [
+          {
+            "node": "Trigger BrightData",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger BrightData": {
+      "main": [
+        [
+          {
+            "node": "Check Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Progress": {
+      "main": [
+        [
+          {
+            "node": "Is Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Ready": {
+      "main": [
+        [
+          {
+            "node": "Download Snapshot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Before Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Retry": {
+      "main": [
+        [
+          {
+            "node": "Check Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Snapshot": {
+      "main": [
+        [
+          {
+            "node": "Build Snapshot File Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Snapshot File Path": {
+      "main": [
+        [
+          {
+            "node": "Write Snapshot File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Snapshot File": {
+      "main": [
+        [
+          {
+            "node": "Convert Ndjson",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert Ndjson": {
+      "main": [
+        [
+          {
+            "node": "Send To Ingest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send To Ingest": {
+      "main": [
+        [
+          {
+            "node": "Log Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Trigger": {
+      "main": [
+        [
+          {
+            "node": "Summarize Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "timezone": "Europe/Madrid",
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "Schedule Trigger2": [
+      {
+        "json": {
+          "timestamp": "2026-02-05T13:47:57.823+01:00",
+          "Readable date": "February 5th 2026, 1:47:57 pm",
+          "Readable time": "1:47:57 pm",
+          "Day of week": "Thursday",
+          "Year": "2026",
+          "Month": "February",
+          "Day of month": "05",
+          "Hour": "13",
+          "Minute": "47",
+          "Second": "57",
+          "Timezone": "Europe/Madrid (UTC+01:00)"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "bd399ff4-9301-481a-bec7-246f1942fd1d",
+  "activeVersionId": null,
+  "versionCounter": 35,
+  "triggerCount": 0,
+  "shared": [
+    {
+      "updatedAt": "2026-04-10T17:42:45.970Z",
+      "createdAt": "2026-04-10T17:42:45.970Z",
+      "role": "workflow:owner",
+      "workflowId": "CHBsMoEVF5Cbc584",
+      "projectId": "ibfR0eObAuPMyUX5",
+      "project": {
+        "updatedAt": "2026-03-23T16:28:51.972Z",
+        "createdAt": "2026-03-23T16:24:40.590Z",
+        "id": "ibfR0eObAuPMyUX5",
+        "name": "Rafael Guerrero <rfguerrero@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "f0c8eb0f-9944-41ce-921f-085dfea8ca64"
+      }
+    }
+  ],
+  "tags": [
+    {
+      "updatedAt": "2026-04-10T18:49:48.099Z",
+      "createdAt": "2026-04-10T18:49:48.099Z",
+      "id": "vmyo9pgQAg2Q2wgA",
+      "name": "scraping"
+    },
+    {
+      "updatedAt": "2026-04-10T18:49:48.108Z",
+      "createdAt": "2026-04-10T18:49:48.108Z",
+      "id": "B23jJq6ZrJxpV9se",
+      "name": "facebook"
+    }
+  ],
+  "activeVersion": null
+}

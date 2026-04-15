@@ -1,8 +1,8 @@
 import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
-// Workflow : SOCIAL INGEST BRIGHTDATA
-// Nodes   : 8  |  Connections: 7
+// Workflow : 20 SOCIAL INGEST BRIGHTDATA
+// Nodes   : 9  |  Connections: 8
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
@@ -15,6 +15,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // UpsertSocialPost                   postgres                   [creds]
 // SummarizeIngest                    code
 // FinalizeIngestRun                  postgres                   [creds]
+// UpdateLastCapturedPost             postgres                   [creds]
 //
 // ROUTING MAP
 // ──────────────────────────────────────────────────────────────────
@@ -24,6 +25,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 //        → UpsertSocialPost
 //          → SummarizeIngest
 //            → FinalizeIngestRun
+//              → UpdateLastCapturedPost
 // ManualTrigger
 //    → BuildSampleBrightDataPayload
 //      → ParseBrightDataEnvelope (↩ loop)
@@ -35,7 +37,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 @workflow({
     id: 'kd5ZHojzpJiD5AMn',
-    name: 'SOCIAL INGEST BRIGHTDATA',
+    name: '20 SOCIAL INGEST BRIGHTDATA',
     active: true,
     settings: {
         errorWorkflow: 'IkqnFDu34CjPjXBj',
@@ -43,9 +45,11 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
         executionOrder: 'v1',
         callerPolicy: 'workflowsFromSameOwner',
         availableInMCP: false,
+        binaryMode: 'separate',
+        timeSavedMode: 'dynamic',
     },
 })
-export class SocialIngestBrightdataWorkflow {
+export class _20SocialIngestBrightdataWorkflow {
     // =====================================================================
     // CONFIGURATION DES NOEUDS
     // =====================================================================
@@ -98,19 +102,48 @@ return [
         year_target: new Date().getUTCFullYear(),
         posts: [
           {
-            id: 'sample-post-1',
+            post_id: 'sample-post-1',
             post_url: 'https://www.facebook.com/ayuntamiento.demo/posts/1234567890',
-            message: 'Concierto de primavera este viernes a las 21:00 en la Plaza Mayor. Entrada libre.',
+            text: 'Concierto de primavera este viernes a las 21:00 en la Plaza Mayor. Entrada libre.',
             created_at: now,
-            page_id: 'page-demo-1',
+            page_id: 'page-demo-001',
             page_name: 'Ayuntamiento Demo',
             page_url: 'https://www.facebook.com/ayuntamiento.demo',
+            post_type: 'PHOTO',
             attachments: [
               {
                 type: 'image',
-                url: 'https://example.com/cartel-demo.jpg',
+                image_url: 'https://example.com/cartel-foto.jpg',
               },
             ],
+          },
+          {
+            post_id: 'sample-post-2',
+            post_url: 'https://www.facebook.com/ayuntamiento.demo/reel/9876543210',
+            text: 'Resumen del festival de verano. ¡Gran éxito de participación!',
+            created_at: now,
+            page_id: 'page-demo-001',
+            page_name: 'Ayuntamiento Demo',
+            page_url: 'https://www.facebook.com/ayuntamiento.demo',
+            post_type: 'REEL',
+            attachments: [
+              {
+                type: 'video',
+                video_url: 'https://example.com/video-festival.mp4',
+                thumbnail: 'https://example.com/thumb-festival.jpg',
+              },
+            ],
+          },
+          {
+            post_id: 'sample-post-3',
+            post_url: 'https://www.facebook.com/ayuntamiento.demo/posts/1111111111',
+            text: '',
+            created_at: now,
+            page_id: 'page-demo-001',
+            page_name: 'Ayuntamiento Demo',
+            page_url: 'https://www.facebook.com/ayuntamiento.demo',
+            post_type: 'STATUS',
+            attachments: [],
           },
         ],
       },
@@ -220,6 +253,7 @@ function inferMediaType(rawItem, fallbackType) {
 function pushMedia(target, sourceUrl, mediaType, originalName) {
   const normalizedSourceUrl = normalizeUrl(sourceUrl);
   if (!normalizedSourceUrl) return;
+  if (target.some((item) => item.normalized_source_url === normalizedSourceUrl && item.media_type === mediaType)) return;
   target.push({
     media_index: target.length,
     media_type: mediaType,
@@ -251,9 +285,18 @@ function collectMedia(raw) {
         continue;
       }
       if (!entry || typeof entry !== 'object') continue;
-      const sourceUrl = firstDefined(entry, ['url', 'src', 'image_url', 'media_url', 'download_url']);
-      if (!sourceUrl) continue;
-      pushMedia(media, sourceUrl, inferMediaType(entry, fallbackType), firstDefined(entry, ['filename', 'name']) || '');
+      const videoUrl = entry.video_url || entry.videoUrl || null;
+      const imageUrl = entry.image_url || entry.img_url || entry.imageUrl || null;
+      const thumbUrl = entry.thumbnail || entry.thumbnail_url || null;
+      if (videoUrl || imageUrl || thumbUrl) {
+        if (videoUrl) pushMedia(media, videoUrl, 'VIDEO', entry.filename || entry.name || '');
+        const previewUrl = thumbUrl || (videoUrl ? imageUrl : null);
+        if (previewUrl) pushMedia(media, previewUrl, 'THUMB', '');
+        if (!videoUrl && imageUrl) pushMedia(media, imageUrl, 'IMAGE', entry.filename || entry.name || '');
+      } else {
+        const sourceUrl = firstDefined(entry, ['url', 'src', 'media_url', 'download_url']);
+        if (sourceUrl) pushMedia(media, sourceUrl, inferMediaType(entry, fallbackType), firstDefined(entry, ['filename', 'name']) || '');
+      }
     }
   }
 
@@ -303,19 +346,24 @@ const scrapedAt = new Date().toISOString();
 const posts = rawPosts.map((raw) => {
   const postUrl = collapseWhitespace(firstDefined(raw, ['post_url', 'url', 'postUrl', 'permalink']) || '');
   const normalizedPostUrl = normalizeUrl(postUrl);
-  const externalPostId = collapseWhitespace(firstDefined(raw, ['external_post_id', 'post_id', 'id', 'postId']) || '');
-  const textPostRaw = collapseWhitespace(firstDefined(raw, ['text_post_raw', 'text', 'message', 'post_text', 'description', 'caption']) || '');
-  const textPostClean = collapseWhitespace(textPostRaw);
+    const externalPostId = collapseWhitespace(firstDefined(raw, ['external_post_id', 'post_id', 'id', 'postId']) || '');
+    const textPostRaw = collapseWhitespace(firstDefined(raw, ['text_post_raw', 'content', 'text', 'message', 'post_text', 'description', 'caption']) || '') || '';
+    const textPostClean = collapseWhitespace(textPostRaw) || '';
   const textBase = toTextBase(textPostClean);
   const mediaItems = collectMedia(raw);
   const mediaHasVideo = mediaItems.some((item) => item.media_type === 'VIDEO');
   const mediaHasPhoto = mediaItems.some((item) => item.media_type === 'IMAGE' || item.media_type === 'THUMB');
   const isReel = normalizedPostUrl.includes('/reel/') || toTextBase(firstDefined(raw, ['post_type', 'type']) || '').includes('REEL');
   const isVideoPost = mediaHasVideo || Boolean(firstDefined(raw, ['has_video', 'is_video']));
-  const publishedAt = normalizeTimestamp(firstDefined(raw, ['published_at', 'created_at', 'date', 'post_date', 'timestamp']), scrapedAt);
+  const publishedAt = normalizeTimestamp(firstDefined(raw, ['published_at', 'created_at', 'date_posted', 'date', 'post_date', 'timestamp']), scrapedAt);
   const accountHandleRaw = collapseWhitespace(firstDefined(raw, ['account_handle', 'page_handle', 'profile_handle', 'author_handle']) || '');
   const processingPriority = mediaItems.length > 0 || textPostClean.length >= 80 ? 'HIGH' : (textPostClean ? 'MEDIUM' : 'LOW');
   const idempotKey = externalPostId ? (sourceCode + ':' + externalPostId) : deterministicHash(sourceCode + ':' + (normalizedPostUrl || JSON.stringify(raw)));
+
+  const postExternalLink = normalizeUrl(firstDefined(raw, ['post_external_link', 'external_link', 'externalLink']) || '');
+  const postExternalTitle = collapseWhitespace(firstDefined(raw, ['post_external_title', 'external_title', 'externalTitle']) || '');
+  const postExternalImage = normalizeUrl(firstDefined(raw, ['post_external_image', 'external_image', 'externalImage']) || '');
+  const linkType = postExternalLink ? (postExternalLink.includes('drive.google') || postExternalLink.includes('.pdf') ? 'PDF' : postExternalLink.includes('youtu') ? 'YOUTUBE' : postExternalLink.includes('search.app') || postExternalLink.includes('ddalmeria') ? 'SHORTLINK' : 'WEB') : '';
 
   return {
     source_code: sourceCode,
@@ -324,7 +372,7 @@ const posts = rawPosts.map((raw) => {
     year_target: Number.isFinite(yearTarget) ? yearTarget : null,
     records_received: rawPosts.length,
     notes,
-    ayto_id: collapseWhitespace(firstDefined(raw, ['ayto_id', 'municipality_id', 'city_id']) || ''),
+    ayto_id: (() => { const v = collapseWhitespace(firstDefined(raw, ['ayto_id', 'municipality_id', 'city_id']) || ''); return v === 'unknown' ? collapseWhitespace(firstDefined(raw, ['profile_handle']) || '') : v; })(),
     account_name: collapseWhitespace(firstDefined(raw, ['account_name', 'page_name', 'profile_name', 'author_name', 'publisher_name']) || 'Unknown account'),
     account_handle: accountHandleRaw.replace(/^@/, ''),
     account_url: collapseWhitespace(firstDefined(raw, ['account_url', 'page_url', 'profile_url', 'author_url']) || ''),
@@ -348,7 +396,11 @@ const posts = rawPosts.map((raw) => {
     media_has_photo: mediaHasPhoto,
     media_has_video: mediaHasVideo,
     processing_priority: processingPriority,
-    raw_payload_json: raw,
+    post_external_link: postExternalLink,
+    post_external_title: postExternalTitle,
+    post_external_image: postExternalImage,
+    external_link_type: linkType,
+    raw_payload_json: { ...raw, source_code: sourceCode },
   };
 }).filter((post) => post.external_post_id || post.normalized_post_url);
 
@@ -471,6 +523,8 @@ return [
         query: `UPDATE ingest_runs
 SET
   status = 'COMPLETED',
+  processed = TRUE,
+  is_enabled = TRUE,
   finished_at = NOW(),
   records_inserted = $1::integer,
   records_updated = $2::integer,
@@ -481,10 +535,49 @@ SET
   END,
   updated_at = NOW()
 WHERE id = $4::bigint
-RETURNING id AS ingest_run_id, status, records_received, records_inserted, records_updated, finished_at;`,
+RETURNING id AS ingest_run_id, status, processed, is_enabled, records_received, records_inserted, records_updated, finished_at;`,
         options: {
             queryReplacement:
                 '={{ [$json.posts_inserted, $json.posts_updated, $json.summary_note, $json.ingest_run_id] }}',
+        },
+    };
+
+    @node({
+        id: 'social-update-last-captured',
+        name: 'Update Last Captured Post',
+        type: 'n8n-nodes-base.postgres',
+        version: 2.6,
+        position: [560, -160],
+        credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
+    })
+    UpdateLastCapturedPost = {
+        operation: 'executeQuery',
+        schema: {
+            mode: 'list',
+            value: 'public',
+        },
+        table: {
+            mode: 'list',
+            value: 'publisher_accounts',
+        },
+        query: `UPDATE publisher_accounts pa
+SET
+  ultimo_post_capturado_fecha = latest.published_at,
+  ultimo_post_capturado_id    = latest.external_post_id,
+  updated_at = NOW()
+FROM (
+  SELECT sp.publisher_account_id, sp.published_at, sp.external_post_id
+  FROM social_posts sp
+  WHERE sp.ingest_run_id = $1::bigint
+    AND sp.published_at IS NOT NULL
+  ORDER BY sp.published_at DESC
+  LIMIT 1
+) AS latest
+WHERE pa.id = latest.publisher_account_id
+  AND (pa.ultimo_post_capturado_fecha IS NULL OR latest.published_at > pa.ultimo_post_capturado_fecha)
+RETURNING pa.id, pa.ayto_id, pa.ultimo_post_capturado_fecha, pa.ultimo_post_capturado_id;`,
+        options: {
+            queryReplacement: '={{ [$json.ingest_run_id] }}',
         },
     };
 
@@ -501,5 +594,6 @@ RETURNING id AS ingest_run_id, status, records_received, records_inserted, recor
         this.SplitOutPosts.out(0).to(this.UpsertSocialPost.in(0));
         this.UpsertSocialPost.out(0).to(this.SummarizeIngest.in(0));
         this.SummarizeIngest.out(0).to(this.FinalizeIngestRun.in(0));
+        this.FinalizeIngestRun.out(0).to(this.UpdateLastCapturedPost.in(0));
     }
 }

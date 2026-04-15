@@ -1,0 +1,3 @@
+- Pushing workflow social_media_prepare_download.workflow.ts...
+✖ Push failed: Cannot push "social_media_prepare_download.workflow.ts": use the full relative path to the workflow file, not a bare filename.
+Example: n8nac push 'workflows/192_168_0_50:5678_rafael_g/personal/social_media_prepare_download.workflow.ts'

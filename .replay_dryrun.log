@@ -1,0 +1,4 @@
+Loaded 303 posts from antiguos/brightdata/sd_mnt9v2vl2jkn64i4yr.json
+Batch size: 250 -> 2 request(s)
+Sample keys: about, active_ads_urls, avatar_image_url, content, count_reactions_type, date_posted, delegate_page_id, following, header_image, input, is_page, is_sponsored
+Dry run completed. Nothing sent.

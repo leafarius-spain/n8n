@@ -1,0 +1,25 @@
+
+❌ Errors (10):
+
+  • Missing required parameter: "schema" [Get And Lock Posts]
+    Path: nodes[Get And Lock Posts].parameters.schema
+  • Missing required parameter: "table" [Get And Lock Posts]
+    Path: nodes[Get And Lock Posts].parameters.table
+  • Missing required parameter: "schema" [Register Media Row]
+    Path: nodes[Register Media Row].parameters.schema
+  • Missing required parameter: "table" [Register Media Row]
+    Path: nodes[Register Media Row].parameters.table
+  • Missing required parameter: "schema" [Mark Download Error]
+    Path: nodes[Mark Download Error].parameters.schema
+  • Missing required parameter: "table" [Mark Download Error]
+    Path: nodes[Mark Download Error].parameters.table
+  • Missing required parameter: "schema" [Update Media Download]
+    Path: nodes[Update Media Download].parameters.schema
+  • Missing required parameter: "table" [Update Media Download]
+    Path: nodes[Update Media Download].parameters.table
+  • Missing required parameter: "schema" [Finalize Posts Status]
+    Path: nodes[Finalize Posts Status].parameters.schema
+  • Missing required parameter: "table" [Finalize Posts Status]
+    Path: nodes[Finalize Posts Status].parameters.table
+
+❌ Workflow validation failed

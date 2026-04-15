@@ -1,0 +1,5 @@
+[N8nApiClient] Projects API unavailable or restricted. Using placeholder Personal project fallback in cache.
+- Pushing workflow workflows/192_168_0_50:5678_rafael_g/personal/social_media_prepare_download.workflow.ts...
+[N8nApiClient] Starting PUT /api/v1/workflows/Vr4f9GrXTrYIIEtp
+[N8nApiClient] PUT finished in 22ms. Status: 200
+✔ ✔ Pushed workflow workflows/192_168_0_50:5678_rafael_g/personal/social_media_prepare_download.workflow.ts.

@@ -1,8 +1,8 @@
 import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
-// Workflow : SOCIAL MEDIA ANALYZE
-// Nodes   : 8  |  Connections: 7
+// Workflow : 40 SOCIAL MEDIA ANALYZE
+// Nodes   : 10  |  Connections: 10
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
@@ -11,7 +11,9 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // ManualTrigger                      manualTrigger
 // ScheduleTrigger                    scheduleTrigger
 // GetMediaToAnalyze                  postgres                   [creds]
-// CallOcr                            httpRequest
+// LoopOverItemsSplitInBatches        splitInBatches
+// ReadMediaFile                      readBinaryFile
+// CallOcr                            httpRequest                [onError→regular]
 // ParseOcrResult                     code
 // SaveOcrResult                      postgres                   [creds]
 // FinalizeAnalysisStatus             postgres                   [creds]
@@ -20,10 +22,13 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // ──────────────────────────────────────────────────────────────────
 // TestWebhook
 //    → GetMediaToAnalyze
-//      → CallOcr
-//        → ParseOcrResult
-//          → SaveOcrResult
-//            → FinalizeAnalysisStatus
+//      → LoopOverItemsSplitInBatches
+//        → FinalizeAnalysisStatus
+//       .out(1) → ReadMediaFile
+//          → CallOcr
+//            → ParseOcrResult
+//              → SaveOcrResult
+//                → LoopOverItemsSplitInBatches (↩ loop)
 // ManualTrigger
 //    → GetMediaToAnalyze (↩ loop)
 // ScheduleTrigger
@@ -36,11 +41,16 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 @workflow({
     id: 'sPi5BYzQkcIfRIdl',
-    name: 'SOCIAL MEDIA ANALYZE',
-    active: true,
-    settings: { executionOrder: 'v1', callerPolicy: 'workflowsFromSameOwner', availableInMCP: false },
+    name: '40 SOCIAL MEDIA ANALYZE',
+    active: false,
+    settings: {
+        executionOrder: 'v1',
+        callerPolicy: 'workflowsFromSameOwner',
+        availableInMCP: false,
+        binaryMode: 'separate',
+    },
 })
-export class SocialMediaAnalyzeWorkflow {
+export class _40SocialMediaAnalyzeWorkflow {
     // =====================================================================
     // CONFIGURATION DES NOEUDS
     // =====================================================================
@@ -51,13 +61,11 @@ export class SocialMediaAnalyzeWorkflow {
         name: 'Test Webhook',
         type: 'n8n-nodes-base.webhook',
         version: 2,
-        position: [-1280, 160],
+        position: [-1280, 64],
     })
     TestWebhook = {
-        httpMethod: 'GET',
         path: 'social-media-analyze-test',
-        responseMode: 'onReceived',
-        responseCode: 200,
+        options: {},
     };
 
     @node({
@@ -74,7 +82,7 @@ export class SocialMediaAnalyzeWorkflow {
         name: 'Schedule Trigger',
         type: 'n8n-nodes-base.scheduleTrigger',
         version: 1.2,
-        position: [-1280, -80],
+        position: [-1280, -128],
     })
     ScheduleTrigger = {
         rule: {
@@ -92,7 +100,7 @@ export class SocialMediaAnalyzeWorkflow {
         name: 'Get Media To Analyze',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [-1056, -320],
+        position: [-1056, -128],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
     })
     GetMediaToAnalyze = {
@@ -111,15 +119,41 @@ export class SocialMediaAnalyzeWorkflow {
   pm.storage_path,
   pm.media_index,
   pm.media_type,
+  pm.ocr_retry_count,
   sp.idempot_key
 FROM post_media pm
 JOIN social_posts sp ON sp.id = pm.social_post_id
 WHERE pm.download_status = 'DOWNLOADED'
   AND pm.media_type = 'IMAGE'
   AND pm.relevance_status = 'IMG_DUDOSA'
+  AND pm.ocr_retry_count < 3
   AND pm.storage_path IS NOT NULL
-ORDER BY sp.processing_priority DESC, pm.id ASC
-LIMIT 20;`,
+  AND sp.analysis_status = 'PEND_ANALISIS'
+ORDER BY sp.processing_priority DESC, pm.id ASC;`,
+        options: {},
+    };
+
+    @node({
+        id: 'social-analyze-loop-items',
+        name: 'Loop Over Items (Split in Batches)',
+        type: 'n8n-nodes-base.splitInBatches',
+        version: 3,
+        position: [-832, -128],
+    })
+    LoopOverItemsSplitInBatches = {
+        options: {},
+    };
+
+    @node({
+        id: 'social-analyze-read-media-file',
+        name: 'Read Media File',
+        type: 'n8n-nodes-base.readBinaryFile',
+        version: 1,
+        position: [-608, -304],
+    })
+    ReadMediaFile = {
+        filePath: '={{ $json.storage_path }}',
+        dataPropertyName: 'data',
     };
 
     @node({
@@ -127,19 +161,20 @@ LIMIT 20;`,
         name: 'Call OCR',
         type: 'n8n-nodes-base.httpRequest',
         version: 4.2,
-        position: [-848, -320],
+        position: [-160, -304],
+        onError: 'continueRegularOutput',
     })
     CallOcr = {
         method: 'POST',
-        url: 'http://paddleocr:5000/predict',
+        url: 'http://paddleocr:5000/dual',
         sendBody: true,
-        contentType: 'json',
-        specifyBody: 'keypair',
+        contentType: 'multipart-form-data',
         bodyParameters: {
             parameters: [
                 {
-                    name: 'path',
-                    value: '={{ $json.storage_path }}',
+                    parameterType: 'formBinaryData',
+                    name: 'image',
+                    inputDataFieldName: 'data',
                 },
             ],
         },
@@ -153,12 +188,10 @@ LIMIT 20;`,
         name: 'Parse OCR Result',
         type: 'n8n-nodes-base.code',
         version: 2,
-        position: [-640, -320],
+        position: [64, -304],
     })
     ParseOcrResult = {
-        mode: 'runOnceForAllItems',
-        language: 'javaScript',
-        jsCode: `// PaddleOCR response: { OCR_LEN, OCR_RAW, OCR_SCORE, resultado }
+        jsCode: `// OCR dual response with winner + per-engine scores.
 const results = [];
 
 for (const item of $input.all()) {
@@ -167,11 +200,15 @@ for (const item of $input.all()) {
   let error_message = null;
   let ocr_text = '';
   let ocr_confidence = 0;
+  let ocr_engine = 'dual-v1';
 
-  if (ocr && typeof ocr.OCR_RAW !== 'undefined') {
+  if (ocr && (typeof ocr.OCR_WIN_TEXT !== 'undefined' || typeof ocr.OCR_RAW !== 'undefined')) {
     ocr_status = 'OCR_DONE';
-    ocr_text = String(ocr.OCR_RAW || '').trim();
-    ocr_confidence = Number(ocr.OCR_SCORE) || 0;
+    ocr_text = String(ocr.OCR_WIN_TEXT || ocr.OCR_RAW || '').trim();
+    ocr_confidence = Number(ocr.OCR_WIN_SCORE || ocr.OCR_SCORE) || 0;
+    if (ocr.OCR_WINNER) {
+      ocr_engine = 'dual-' + String(ocr.OCR_WINNER).toLowerCase();
+    }
   } else {
     error_message = 'Unexpected OCR response: ' + JSON.stringify(ocr).substring(0, 200);
   }
@@ -181,18 +218,18 @@ for (const item of $input.all()) {
     ? 'IMG_DUDOSA'
     : (has_meaningful_text ? 'IMG_CON_TEXTO' : 'IMG_SIN_TEXTO');
   const relevance_reason = has_meaningful_text
-    ? ('Texto detectado por PaddleOCR: ' + ocr_text.substring(0, 80))
+    ? ('Texto detectado por OCR dual: ' + ocr_text.substring(0, 80))
     : (ocr_status === 'OCR_ERROR' ? error_message : 'Sin texto significativo en imagen');
 
   results.push({
     json: {
       analysis_version: 'v1',
       ocr_status,
-      ocr_engine: 'paddle-v1',
+      ocr_engine,
       ocr_confidence,
       ocr_text_raw: ocr_text,
       has_meaningful_text,
-      provider_payload_json: { OCR_LEN: ocr.OCR_LEN, OCR_RAW: ocr.OCR_RAW, OCR_SCORE: ocr.OCR_SCORE },
+      provider_payload_json: ocr,
       relevance_status,
       relevance_reason: String(relevance_reason || '').substring(0, 500),
       error_message,
@@ -208,7 +245,7 @@ return results;`,
         name: 'Save OCR Result',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [-432, -320],
+        position: [288, -128],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
     })
     SaveOcrResult = {
@@ -244,8 +281,12 @@ return results;`,
   RETURNING id AS ocr_id, post_media_id
 )
 UPDATE post_media pm SET
-  relevance_status = $10::text,
+  relevance_status = CASE
+    WHEN $3::text = 'OCR_ERROR' AND pm.ocr_retry_count >= 2 THEN 'IMG_MANUAL_REVIEW'
+    ELSE $10::text
+  END,
   relevance_reason = $11::text,
+  ocr_retry_count = CASE WHEN $3::text = 'OCR_ERROR' THEN pm.ocr_retry_count + 1 ELSE pm.ocr_retry_count END,
   updated_at = NOW()
 FROM ocr_upsert oi
 WHERE pm.id = oi.post_media_id
@@ -261,7 +302,7 @@ RETURNING pm.id AS media_id, pm.social_post_id, pm.relevance_status, oi.ocr_id;`
         name: 'Finalize Analysis Status',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [-224, -320],
+        position: [-608, -112],
         credentials: { postgres: { id: 'E2XU4m84S5WN82lK', name: 'Postgres social account' } },
     })
     FinalizeAnalysisStatus = {
@@ -308,9 +349,12 @@ RETURNING sp.id AS post_id, sp.idempot_key, sp.analysis_status, pos.total_image_
         this.TestWebhook.out(0).to(this.GetMediaToAnalyze.in(0));
         this.ManualTrigger.out(0).to(this.GetMediaToAnalyze.in(0));
         this.ScheduleTrigger.out(0).to(this.GetMediaToAnalyze.in(0));
-        this.GetMediaToAnalyze.out(0).to(this.CallOcr.in(0));
+        this.GetMediaToAnalyze.out(0).to(this.LoopOverItemsSplitInBatches.in(0));
+        this.LoopOverItemsSplitInBatches.out(0).to(this.FinalizeAnalysisStatus.in(0));
+        this.LoopOverItemsSplitInBatches.out(1).to(this.ReadMediaFile.in(0));
+        this.ReadMediaFile.out(0).to(this.CallOcr.in(0));
         this.CallOcr.out(0).to(this.ParseOcrResult.in(0));
         this.ParseOcrResult.out(0).to(this.SaveOcrResult.in(0));
-        this.SaveOcrResult.out(0).to(this.FinalizeAnalysisStatus.in(0));
+        this.SaveOcrResult.out(0).to(this.LoopOverItemsSplitInBatches.in(0));
     }
 }

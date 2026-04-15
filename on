@@ -1,0 +1,32 @@
+id	bigint
+source_id	bigint
+publisher_account_id	bigint
+ingest_run_id	bigint
+idempot_key	text
+external_post_id	text
+normalized_post_url	text
+post_url	text
+post_type	text
+is_reel	boolean
+is_video_post	boolean
+published_at	timestamp with time zone
+scraped_at	timestamp with time zone
+text_post_raw	text
+text_post_clean	text
+text_base	text
+has_text	boolean
+text_length	integer
+media_count_total	integer
+media_has_photo	boolean
+media_has_video	boolean
+processing_priority	text
+post_status	text
+media_status	text
+analysis_status	text
+ingest_status	text
+error_flags	jsonb
+raw_payload_json	jsonb
+raw_payload_path	text
+created_at	timestamp with time zone
+updated_at	timestamp with time zone
+media_items_json	jsonb

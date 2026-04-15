@@ -1,6 +1,0 @@
-                                                  List of functions
- Schema |            Name            |                 Result data type                 | Argument data types | Type 
---------+----------------------------+--------------------------------------------------+---------------------+------
- public | social_register_ingest_run | TABLE(ingest_run_id bigint, was_created boolean) | payload jsonb       | func
-(1 row)
-

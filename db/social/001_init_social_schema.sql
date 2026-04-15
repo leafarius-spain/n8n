@@ -26,7 +26,17 @@ CREATE TABLE IF NOT EXISTS publisher_accounts (
   account_url TEXT,
   external_account_id TEXT,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  requiere_login BOOLEAN NOT NULL DEFAULT FALSE,
   notes TEXT,
+  localidad TEXT,
+  email TEXT,
+  web_url TEXT,
+  drive_folder_id TEXT,
+  fecha_inicio_historico DATE,
+  fecha_fin_historico DATE,
+  ultimo_post_capturado_fecha TIMESTAMPTZ,
+  ultimo_post_capturado_id TEXT,
+  observaciones TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -52,6 +62,8 @@ CREATE TABLE IF NOT EXISTS ingest_runs (
   records_inserted INTEGER NOT NULL DEFAULT 0,
   records_updated INTEGER NOT NULL DEFAULT 0,
   error_count INTEGER NOT NULL DEFAULT 0,
+  processed BOOLEAN NOT NULL DEFAULT FALSE,
+  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   raw_payload_path TEXT,
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -64,6 +76,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_ingest_runs_source_external
 
 CREATE INDEX IF NOT EXISTS idx_ingest_runs_status_started
   ON ingest_runs (status, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ingest_runs_enabled_processed
+  ON ingest_runs (is_enabled, processed, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS social_posts (
   id BIGSERIAL PRIMARY KEY,
@@ -287,6 +302,8 @@ BEGIN
       external_run_id,
       year_target,
       status,
+      processed,
+      is_enabled,
       records_received,
       raw_payload_path,
       notes
@@ -296,6 +313,8 @@ BEGIN
       v_external_run_id,
       v_year_target,
       'RUNNING',
+      FALSE,
+      TRUE,
       v_records_received,
       v_raw_payload_path,
       v_notes
@@ -304,7 +323,9 @@ BEGIN
     DO UPDATE SET
       run_type = EXCLUDED.run_type,
       year_target = COALESCE(EXCLUDED.year_target, ingest_runs.year_target),
-      status = 'RUNNING',
+      status = CASE WHEN ingest_runs.is_enabled = FALSE THEN 'RUNNING' ELSE 'RUNNING' END,
+      processed = FALSE,
+      is_enabled = TRUE,
       records_received = GREATEST(ingest_runs.records_received, EXCLUDED.records_received),
       raw_payload_path = COALESCE(EXCLUDED.raw_payload_path, ingest_runs.raw_payload_path),
       notes = COALESCE(EXCLUDED.notes, ingest_runs.notes),
@@ -316,6 +337,8 @@ BEGIN
       run_type,
       year_target,
       status,
+      processed,
+      is_enabled,
       records_received,
       raw_payload_path,
       notes
@@ -324,6 +347,8 @@ BEGIN
       v_run_type,
       v_year_target,
       'RUNNING',
+      FALSE,
+      TRUE,
       v_records_received,
       v_raw_payload_path,
       v_notes
@@ -521,6 +546,23 @@ BEGIN
     updated_at = NOW()
   RETURNING id, (xmax = 0) INTO v_post_id, v_was_inserted;
 
+  -- Expand media items from media_items_json into post_media rows (atomic, same transaction)
+  INSERT INTO post_media (social_post_id, media_index, media_type, source_url, normalized_source_url)
+  SELECT
+    v_post_id,
+    (item->>'media_index')::INTEGER,
+    COALESCE(NULLIF(item->>'media_type', ''), 'IMAGE'),
+    item->>'source_url',
+    NULLIF(item->>'normalized_source_url', '')
+  FROM jsonb_array_elements(v_media_items_json) AS item
+  WHERE NULLIF(item->>'source_url', '') IS NOT NULL
+  ON CONFLICT (social_post_id, media_index) DO UPDATE SET
+    media_type = EXCLUDED.media_type,
+    source_url = EXCLUDED.source_url,
+    normalized_source_url = EXCLUDED.normalized_source_url,
+    updated_at = NOW()
+  WHERE post_media.download_status = 'MEDIA_PENDING';
+
   post_id := v_post_id;
   publisher_account_id := v_publisher_account_id;
   source_id := v_source_id;
@@ -580,3 +622,22 @@ SET
   name = EXCLUDED.name,
   is_active = EXCLUDED.is_active,
   updated_at = NOW();
+
+-- Add extra columns to publisher_accounts (idempotent, safe to re-run)
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS requiere_login BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS localidad TEXT;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS web_url TEXT;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS drive_folder_id TEXT;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS fecha_inicio_historico DATE;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS fecha_fin_historico DATE;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS ultimo_post_capturado_fecha TIMESTAMPTZ;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS ultimo_post_capturado_id TEXT;
+ALTER TABLE publisher_accounts ADD COLUMN IF NOT EXISTS observaciones TEXT;
+
+-- Ingest run state flags (idempotent, safe to re-run)
+ALTER TABLE ingest_runs ADD COLUMN IF NOT EXISTS processed BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE ingest_runs ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+CREATE INDEX IF NOT EXISTS idx_ingest_runs_enabled_processed
+  ON ingest_runs (is_enabled, processed, started_at DESC);
