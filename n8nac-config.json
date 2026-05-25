@@ -1,30 +1,34 @@
 {
-  "version": 2,
-  "activeInstanceId": "instance-aa9ed801",
-  "instances": [
+  "version": 4,
+  "activeEnvironmentId": "default",
+  "environmentTargets": [
     {
-      "id": "instance-aa9ed801",
-      "name": "192.168.0.50 · Rafael Guerrero",
-      "host": "http://192.168.0.50:5678",
-      "syncFolder": "workflows",
-      "projectId": "personal",
-      "projectName": "Personal",
+      "id": "default-instance",
+      "name": "Default instance",
+      "kind": "external-instance",
+      "url": "http://192.168.0.50:5678",
       "instanceIdentifier": "192_168_0_50:5678_rafael_g",
-      "workflowDir": "workflows/192_168_0_50:5678_rafael_g/personal",
       "verification": {
         "status": "verified",
         "normalizedHost": "http://192.168.0.50:5678",
         "userId": "f0c8eb0f-9944-41ce-921f-085dfea8ca64",
         "userName": "Rafael Guerrero",
         "userEmail": "rfguerrero@gmail.com",
-        "lastCheckedAt": "2026-04-17T08:37:10.434Z"
+        "lastCheckedAt": "2026-05-09T21:33:56.220Z"
       }
     }
   ],
-  "host": "http://192.168.0.50:5678",
-  "syncFolder": "workflows",
-  "projectId": "personal",
-  "projectName": "Personal",
-  "instanceIdentifier": "192_168_0_50:5678_rafael_g",
-  "workflowDir": "workflows/192_168_0_50:5678_rafael_g/personal"
+  "environments": [
+    {
+      "id": "default",
+      "name": "Default",
+      "syncSlug": "default",
+      "legacyWorkflowDir": "workflows/192_168_0_50:5678_rafael_g/personal",
+      "environmentTargetId": "default-instance",
+      "projectId": "personal",
+      "projectName": "Personal",
+      "workflowsPath": "workflows/192_168_0_50:5678_rafael_g/personal",
+      "syncFolder": "workflows"
+    }
+  ]
 }

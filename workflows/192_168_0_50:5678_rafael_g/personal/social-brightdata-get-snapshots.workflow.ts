@@ -48,6 +48,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
     id: 'ryH7q9rLu96xKBFw',
     name: '10 SOCIAL BRIGHTDATA TRIGGER',
     active: false,
+    isArchived: false,
     settings: {
         timezone: 'Europe/Madrid',
         executionOrder: 'v1',
@@ -159,11 +160,11 @@ return out;`,
         type: 'n8n-nodes-base.httpRequest',
         version: 4.2,
         position: [-352, 128],
-        credentials: { httpBearerAuth: { id: '0rTspKriNsoJizFz', name: 'BRIGHT DATA' } },
+        credentials: { httpBearerAuth: { id: 'ZuO7wHiFEa3EziZR', name: 'BRIGHT DATA' } },
     })
     TriggerBrightdata = {
         method: 'POST',
-        url: 'https://api.brightdata.com/datasets/v3/trigger?dataset_id=gd_lkaxegm826bjpoo9m5&include_errors=true',
+        url: 'https://api.brightdata.com/datasets/v3/trigger?dataset_id=gd_lkaxegm826bjpoo9m5&notify=false&include_errors=true',
         authentication: 'genericCredentialType',
         genericAuthType: 'httpBearerAuth',
         sendBody: true,
@@ -182,7 +183,7 @@ return out;`,
         type: 'n8n-nodes-base.httpRequest',
         version: 4.2,
         position: [-128, 128],
-        credentials: { httpBearerAuth: { id: '0rTspKriNsoJizFz', name: 'BRIGHT DATA' } },
+        credentials: { httpBearerAuth: { id: 'ZuO7wHiFEa3EziZR', name: 'BRIGHT DATA' } },
     })
     CheckProgress = {
         url: "={{ 'https://api.brightdata.com/datasets/v3/progress/' + $('Trigger BrightData').item.json.snapshot_id }}",
@@ -235,7 +236,7 @@ return out;`,
         type: 'n8n-nodes-base.httpRequest',
         version: 4.2,
         position: [320, 0],
-        credentials: { httpBearerAuth: { id: '0rTspKriNsoJizFz', name: 'BRIGHT DATA' } },
+        credentials: { httpBearerAuth: { id: 'ZuO7wHiFEa3EziZR', name: 'BRIGHT DATA' } },
     })
     DownloadSnapshot = {
         url: "={{ 'https://api.brightdata.com/datasets/v3/snapshot/' + $('Trigger BrightData').item.json.snapshot_id + '?format=ndjson' }}",

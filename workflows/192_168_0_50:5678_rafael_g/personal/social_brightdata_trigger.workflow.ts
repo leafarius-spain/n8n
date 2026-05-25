@@ -29,16 +29,15 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // =====================================================================
 
 @workflow({
-    id: 'CHBsMoEVF5Cbc584',
+    id: 'gZKx629rYPKsJzyf',
     name: '10 SOCIAL BRIGHTDATA TRIGGER',
     active: false,
-    tags: ['scraping', 'facebook'],
+    isArchived: false,
     settings: {
         timezone: 'Europe/Madrid',
         executionOrder: 'v1',
-        callerPolicy: 'workflowsFromSameOwner',
         availableInMCP: false,
-        binaryMode: 'separate',
+        callerPolicy: 'workflowsFromSameOwner',
     },
 })
 export class _10SocialBrightdataTriggerWorkflow {
@@ -97,11 +96,11 @@ ORDER BY pa.id;`,
         type: 'n8n-nodes-base.httpRequest',
         version: 4.2,
         position: [-320, 0],
-        credentials: { httpBearerAuth: { id: '0rTspKriNsoJizFz', name: 'BRIGHT DATA' } },
+        credentials: { httpBearerAuth: { id: 'ZuO7wHiFEa3EziZR', name: 'BRIGHT DATA' } },
     })
     TriggerBrightdata = {
         method: 'POST',
-        url: 'https://api.brightdata.com/datasets/v3/trigger?dataset_id=gd_lkaxegm826bjpoo9m5&include_errors=true',
+        url: 'https://api.brightdata.com/datasets/v3/trigger?dataset_id=gd_lkaxegm826bjpoo9m5&notify=false&include_errors=true',
         authentication: 'genericCredentialType',
         genericAuthType: 'httpBearerAuth',
         sendBody: true,
@@ -120,7 +119,7 @@ ORDER BY pa.id;`,
         type: 'n8n-nodes-base.httpRequest',
         version: 4.2,
         position: [-80, 0],
-        credentials: { httpBearerAuth: { id: '0rTspKriNsoJizFz', name: 'BRIGHT DATA' } },
+        credentials: { httpBearerAuth: { id: 'ZuO7wHiFEa3EziZR', name: 'BRIGHT DATA' } },
     })
     CheckProgress = {
         method: 'GET',
@@ -179,7 +178,7 @@ ORDER BY pa.id;`,
         type: 'n8n-nodes-base.httpRequest',
         version: 4.2,
         position: [400, 0],
-        credentials: { httpBearerAuth: { id: '0rTspKriNsoJizFz', name: 'BRIGHT DATA' } },
+        credentials: { httpBearerAuth: { id: 'ZuO7wHiFEa3EziZR', name: 'BRIGHT DATA' } },
     })
     DownloadSnapshot = {
         method: 'GET',
