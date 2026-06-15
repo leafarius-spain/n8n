@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recibo de Seguro</title>
+<style>
+  :root {
+    --amarillo: #f4c20d;
+    --gris: #5b5b5b;
+    --rojo: #c62828;
+    --borde: #d0d0d0;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f0f0f0;
+    color: #222;
+    font-size: 16px;
+  }
+  .app { max-width: 640px; margin: 0 auto; padding: 12px 12px 60px; }
+  h1 { font-size: 20px; margin: 8px 0 16px; }
+  h2 {
+    font-size: 15px; text-transform: uppercase; letter-spacing: .5px;
+    color: var(--gris); margin: 18px 0 8px; border-bottom: 2px solid var(--amarillo);
+    padding-bottom: 4px;
+  }
+  details { background: #fff; border: 1px solid var(--borde); border-radius: 8px; margin-bottom: 12px; }
+  details > summary { cursor: pointer; padding: 12px 14px; font-weight: 600; color: var(--gris); }
+  details[open] > summary { border-bottom: 1px solid var(--borde); }
+  .card { background: #fff; border: 1px solid var(--borde); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  label { display: block; font-size: 13px; color: var(--gris); margin: 10px 0 4px; font-weight: 600; }
+  input, select, textarea {
+    width: 100%; padding: 12px; font-size: 16px; border: 1px solid var(--borde);
+    border-radius: 8px; background: #fff; font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--amarillo); border-color: var(--amarillo); }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .acciones { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0; }
+  button {
+    flex: 1 1 45%; min-height: 52px; font-size: 16px; font-weight: 700; border: none;
+    border-radius: 10px; cursor: pointer; padding: 0 14px;
+  }
+  .btn-generar { background: #222; color: #fff; flex-basis: 100%; }
+  .btn-whatsapp { background: #25d366; color: #fff; }
+  .btn-imprimir { background: #1565c0; color: #fff; }
+  .btn-nuevo { background: #eee; color: #333; }
+  .nota { font-size: 13px; color: var(--gris); margin: 6px 0; }
+
+  /* ---------- RECIBO ---------- */
+  #recibo { display: none; }
+  #recibo.visible { display: block; }
+  .recibo-box {
+    background: #fff; border: 1px solid #999; border-radius: 6px; overflow: hidden;
+    position: relative; padding: 0;
+  }
+  .recibo-head { display: flex; border-bottom: 3px solid var(--amarillo); }
+  .recibo-head .barra { width: 8px; background: var(--amarillo); }
+  .recibo-head .emisor { padding: 12px 14px; flex: 1; }
+  .emisor .logo { font-size: 24px; font-weight: 800; letter-spacing: -1px; }
+  .emisor .sub { font-size: 10px; letter-spacing: 3px; color: var(--gris); text-transform: uppercase; }
+  .emisor .datos { font-size: 11px; color: #444; margin-top: 6px; line-height: 1.5; }
+  .recibo-body { padding: 14px; position: relative; }
+  .sello {
+    position: absolute; top: 8px; right: 10px; color: var(--rojo);
+    border: 3px solid var(--rojo); border-radius: 6px; padding: 2px 10px;
+    font-weight: 800; font-size: 20px; transform: rotate(-8deg); letter-spacing: 2px;
+    opacity: .85;
+  }
+  .linea { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; border-bottom: 1px dotted #ddd; }
+  .linea .k { color: var(--gris); }
+  .linea .v { font-weight: 600; text-align: right; }
+  .tomador { margin: 10px 0; padding: 8px 0; border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; }
+  .tomador .nombre { font-weight: 800; font-size: 15px; }
+  .tomador .dir { font-size: 13px; color: #444; }
+  .desglose { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  .desglose th, .desglose td { border: 1px solid #ccc; padding: 5px; text-align: right; }
+  .desglose th { background: #f7f7f7; color: var(--gris); font-weight: 600; }
+  .total-grande { text-align: right; font-size: 22px; font-weight: 800; margin-top: 10px; }
+  .total-grande small { font-size: 13px; color: var(--gris); font-weight: 600; }
+  .recibo-foot { padding: 10px 14px; border-top: 1px solid #ccc; font-size: 11px; color: var(--gris); display: flex; justify-content: space-between; align-items: flex-end; }
+  .firma { text-align: center; }
+  .firma .linea-firma { border-top: 1px solid #888; width: 130px; margin-top: 26px; padding-top: 2px; }
+
+  @media print {
+    body { background: #fff; }
+    .app > *:not(#recibo), .acciones, h1 { display: none !important; }
+    #recibo { display: block !important; margin: 0; }
+    .recibo-box { border: 1px solid #000; }
+    @page { margin: 10mm; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>🧾 Recibo de Seguro</h1>
+
+  <!-- DATOS DEL EMISOR (se guardan en el móvil) -->
+  <details id="cfgEmisor">
+    <summary>⚙️ Mis datos / Compañía (se guardan en este móvil)</summary>
+    <div style="padding: 0 14px 14px;">
+      <label>Nombre / Compañía</label>
+      <input id="e_nombre" placeholder="Meridiano · Compañía de Seguros">
+      <label>Subtítulo (opcional)</label>
+      <input id="e_sub" placeholder="COMPAÑÍA DE SEGUROS">
+      <label>Domicilio social</label>
+      <input id="e_dir" placeholder="Avda. Jean Claude Combaldieu, 5 · 03008 Alicante">
+      <div class="row">
+        <div><label>C.I.F. / NIF</label><input id="e_cif" placeholder="A18000296"></div>
+        <div><label>Teléfono</label><input id="e_tel" placeholder="900 408 200"></div>
+      </div>
+      <label>Email</label>
+      <input id="e_email" placeholder="info@meridiano.gruposav.com">
+      <label>Agente / Cobrador (firma)</label>
+      <input id="e_agente" placeholder="Nombre del agente">
+      <button class="btn-nuevo" style="margin-top:12px;flex-basis:100%" onclick="guardarEmisor()">💾 Guardar mis datos</button>
+    </div>
+  </details>
+
+  <!-- DATOS DEL RECIBO -->
+  <h2>Datos del recibo</h2>
+  <div class="card">
+    <div class="row">
+      <div><label>Nº de recibo</label><input id="num_recibo"></div>
+      <div><label>Fecha</label><input id="fecha" type="date"></div>
+    </div>
+    <div class="row">
+      <div><label>Nº de póliza</label><input id="poliza" placeholder="D24/000781"></div>
+      <div><label>Producto / Ramo</label><input id="producto" placeholder="Protección Familiar"></div>
+    </div>
+
+    <label>Tomador (cliente)</label>
+    <input id="cliente" placeholder="ANA MARIA DIAZ GARCIA">
+    <label>Domicilio del cliente</label>
+    <textarea id="domicilio" rows="2" placeholder="Calle California 19 · Aguadulce · Almería"></textarea>
+
+    <div class="row">
+      <div>
+        <label>Forma de pago</label>
+        <select id="tpago">
+          <option>MENSUAL</option><option>TRIMESTRAL</option>
+          <option>SEMESTRAL</option><option>ANUAL</option><option>ÚNICO</option>
+        </select>
+      </div>
+      <div>
+        <label>Método</label>
+        <select id="metodo">
+          <option>EFECTIVO</option><option>TARJETA</option>
+          <option>TRANSFERENCIA</option><option>BIZUM</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row">
+      <div><label>Periodo de validez — Desde</label><input id="desde" type="date"></div>
+      <div><label>Hasta</label><input id="hasta" type="date"></div>
+    </div>
+    <label>Concepto (mes / observaciones)</label>
+    <input id="concepto" placeholder="Mes de mayo">
+  </div>
+
+  <!-- IMPORTE -->
+  <h2>Importe</h2>
+  <div class="card">
+    <label>Importe total cobrado (€)</label>
+    <input id="total" type="number" step="0.01" inputmode="decimal" placeholder="42,00" oninput="syncTotal()">
+
+    <details style="margin-top:12px;border:none">
+      <summary style="padding:8px 0">➕ Desglose de la prima (opcional)</summary>
+      <div class="nota">Si lo rellenas, el total se calcula solo.</div>
+      <div class="row">
+        <div><label>Prima tarifa</label><input class="desg" id="d_prima" type="number" step="0.01" inputmode="decimal" oninput="calcDesglose()"></div>
+        <div><label>CCS</label><input class="desg" id="d_ccs" type="number" step="0.01" inputmode="decimal" oninput="calcDesglose()"></div>
+      </div>
+      <div class="row">
+        <div><label>RLEA</label><input class="desg" id="d_rlea" type="number" step="0.01" inputmode="decimal" oninput="calcDesglose()"></div>
+        <div><label>IPS</label><input class="desg" id="d_ips" type="number" step="0.01" inputmode="decimal" oninput="calcDesglose()"></div>
+      </div>
+      <div class="row">
+        <div><label>Otros</label><input class="desg" id="d_otros" type="number" step="0.01" inputmode="decimal" oninput="calcDesglose()"></div>
+        <div></div>
+      </div>
+    </details>
+  </div>
+
+  <div class="acciones">
+    <button class="btn-generar" onclick="generar()">✅ Generar recibo</button>
+  </div>
+
+  <!-- ===== RECIBO GENERADO ===== -->
+  <div id="recibo">
+    <div class="recibo-box">
+      <div class="recibo-head">
+        <div class="barra"></div>
+        <div class="emisor">
+          <div class="logo" id="r_nombre"></div>
+          <div class="sub" id="r_sub"></div>
+          <div class="datos" id="r_datos"></div>
+        </div>
+      </div>
+      <div class="recibo-body">
+        <div class="sello">PAGADO</div>
+        <div class="linea"><span class="k">Nº de póliza</span><span class="v" id="r_poliza"></span></div>
+        <div class="linea"><span class="k">Nº de recibo</span><span class="v" id="r_num"></span></div>
+        <div class="linea"><span class="k">Fecha</span><span class="v" id="r_fecha"></span></div>
+        <div class="linea"><span class="k">Forma de pago</span><span class="v" id="r_tpago"></span></div>
+        <div class="linea"><span class="k">Periodo de validez</span><span class="v" id="r_periodo"></span></div>
+        <div class="linea"><span class="k">Concepto</span><span class="v" id="r_concepto"></span></div>
+
+        <div class="tomador">
+          <div class="nota" style="margin:0">DATOS DEL TOMADOR Y DOMICILIO DEL RECIBO</div>
+          <div class="nombre" id="r_cliente"></div>
+          <div class="dir" id="r_domicilio"></div>
+        </div>
+
+        <table class="desglose" id="r_tabla">
+          <thead><tr><th>Prima tarifa</th><th>CCS</th><th>RLEA</th><th>IPS</th><th>Otros</th><th>Total</th></tr></thead>
+          <tbody><tr>
+            <td id="r_dprima"></td><td id="r_dccs"></td><td id="r_drlea"></td>
+            <td id="r_dips"></td><td id="r_dotros"></td><td id="r_dtotal"></td>
+          </tr></tbody>
+        </table>
+
+        <div class="total-grande">TOTAL <span id="r_total"></span> <small>€</small></div>
+        <div class="nota" id="r_metodo" style="text-align:right"></div>
+      </div>
+      <div class="recibo-foot">
+        <div id="r_pie">He recibido la cantidad indicada en concepto de pago del recibo.</div>
+        <div class="firma">
+          <div class="linea-firma">Firma / Agente</div>
+          <div id="r_agente"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="acciones">
+      <button class="btn-whatsapp" onclick="enviarWhatsApp()">📲 WhatsApp</button>
+      <button class="btn-imprimir" onclick="window.print()">🖨️ Imprimir / PDF</button>
+      <button class="btn-nuevo" onclick="nuevoRecibo()">🔄 Nuevo recibo</button>
+    </div>
+    <div class="nota">📲 WhatsApp envía el texto del recibo. Para mandar el documento, pulsa <b>Imprimir / PDF</b>, guárdalo como PDF y adjúntalo en el chat.</div>
+  </div>
+</div>
+
+<script>
+  // ---------- Utilidades ----------
+  const $ = id => document.getElementById(id);
+  const eur = n => (isNaN(n) ? 0 : n).toLocaleString('es-ES', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const num = v => parseFloat((v || '').toString().replace(',', '.')) || 0;
+  const fechaCorta = iso => { if(!iso) return ''; const [a,m,d]=iso.split('-'); return `${d}/${m}/${a.slice(2)}`; };
+  const hoyISO = () => new Date().toISOString().slice(0,10);
+
+  // ---------- Datos del emisor (localStorage) ----------
+  const CAMPOS_EMISOR = ['e_nombre','e_sub','e_dir','e_cif','e_tel','e_email','e_agente'];
+  function cargarEmisor() {
+    const data = JSON.parse(localStorage.getItem('reciboEmisor') || '{}');
+    CAMPOS_EMISOR.forEach(c => { if (data[c] !== undefined) $(c).value = data[c]; });
+    // Valores de ejemplo la primera vez (basados en el recibo de muestra)
+    if (!localStorage.getItem('reciboEmisor')) {
+      $('e_nombre').value = 'Meridiano';
+      $('e_sub').value = 'COMPAÑÍA DE SEGUROS';
+      $('e_dir').value = 'Avda. Jean Claude Combaldieu, 5 · 03008 Alicante';
+      $('e_cif').value = 'A18000296';
+      $('e_tel').value = '900 408 200';
+      $('e_email').value = 'info@meridiano.gruposav.com';
+    }
+  }
+  function guardarEmisor() {
+    const data = {};
+    CAMPOS_EMISOR.forEach(c => data[c] = $(c).value);
+    localStorage.setItem('reciboEmisor', JSON.stringify(data));
+    $('cfgEmisor').open = false;
+    alert('✅ Datos guardados en este móvil.');
+  }
+
+  // ---------- Nº de recibo consecutivo ----------
+  function siguienteNumero() {
+    let n = parseInt(localStorage.getItem('reciboContador') || '0', 10) + 1;
+    const anio = new Date().getFullYear();
+    return `${anio}-${String(n).padStart(4, '0')}`;
+  }
+  function consumirNumero() {
+    let n = parseInt(localStorage.getItem('reciboContador') || '0', 10) + 1;
+    localStorage.setItem('reciboContador', n);
+  }
+
+  // ---------- Importe / desglose ----------
+  function calcDesglose() {
+    const suma = num($('d_prima').value)+num($('d_ccs').value)+num($('d_rlea').value)+num($('d_ips').value)+num($('d_otros').value);
+    if (suma > 0) $('total').value = suma.toFixed(2);
+  }
+  function syncTotal() {} // el total manual manda si no hay desglose
+
+  // ---------- Generar el recibo ----------
+  function generar() {
+    if (!$('cliente').value.trim()) { alert('Pon el nombre del cliente.'); return; }
+    if (num($('total').value) <= 0) { alert('Pon el importe cobrado.'); return; }
+
+    $('r_nombre').textContent = $('e_nombre').value || 'Recibo de Seguro';
+    $('r_sub').textContent = $('e_sub').value;
+    const d = [];
+    if ($('e_dir').value) d.push($('e_dir').value);
+    if ($('e_cif').value) d.push('C.I.F. ' + $('e_cif').value);
+    if ($('e_tel').value) d.push('Tel. ' + $('e_tel').value);
+    if ($('e_email').value) d.push($('e_email').value);
+    $('r_datos').innerHTML = d.join('<br>');
+
+    $('r_poliza').textContent = $('poliza').value || '—';
+    $('r_num').textContent = $('num_recibo').value;
+    $('r_fecha').textContent = fechaCorta($('fecha').value);
+    $('r_tpago').textContent = $('tpago').value;
+    const desde = fechaCorta($('desde').value), hasta = fechaCorta($('hasta').value);
+    $('r_periodo').textContent = (desde && hasta) ? `Del ${desde} al ${hasta}` : '—';
+    $('r_concepto').textContent = $('concepto').value || ($('producto').value || '—');
+    $('r_cliente').textContent = $('cliente').value;
+    $('r_domicilio').textContent = $('domicilio').value;
+
+    // Desglose: si hay valores, mostramos tabla; si no, la ocultamos
+    const desg = [num($('d_prima').value),num($('d_ccs').value),num($('d_rlea').value),num($('d_ips').value),num($('d_otros').value)];
+    const hayDesglose = desg.some(x => x > 0);
+    const total = num($('total').value);
+    if (hayDesglose) {
+      $('r_tabla').style.display = '';
+      $('r_dprima').textContent = eur(desg[0]); $('r_dccs').textContent = eur(desg[1]);
+      $('r_drlea').textContent = eur(desg[2]); $('r_dips').textContent = eur(desg[3]);
+      $('r_dotros').textContent = eur(desg[4]); $('r_dtotal').textContent = eur(total);
+    } else {
+      $('r_tabla').style.display = 'none';
+    }
+    $('r_total').textContent = eur(total);
+    $('r_metodo').textContent = 'Pagado en ' + $('metodo').value.toLowerCase();
+    $('r_agente').textContent = $('e_agente').value || '';
+
+    consumirNumero();
+    $('recibo').classList.add('visible');
+    $('recibo').scrollIntoView({behavior: 'smooth'});
+  }
+
+  // ---------- WhatsApp ----------
+  function enviarWhatsApp() {
+    const L = [];
+    L.push('*RECIBO DE SEGURO*');
+    if ($('e_nombre').value) L.push($('e_nombre').value);
+    L.push('');
+    L.push('Nº recibo: ' + $('num_recibo').value);
+    if ($('poliza').value) L.push('Póliza: ' + $('poliza').value);
+    L.push('Fecha: ' + fechaCorta($('fecha').value));
+    L.push('Cliente: ' + $('cliente').value);
+    if ($('domicilio').value) L.push('Domicilio: ' + $('domicilio').value.replace(/\n/g,' '));
+    if ($('concepto').value) L.push('Concepto: ' + $('concepto').value);
+    L.push('Forma de pago: ' + $('tpago').value);
+    L.push('');
+    L.push('*TOTAL PAGADO: ' + eur(num($('total').value)) + ' €*  ✅');
+    L.push('Pagado en ' + $('metodo').value.toLowerCase());
+    if ($('e_agente').value) { L.push(''); L.push('Atendido por ' + $('e_agente').value); }
+    const texto = L.join('\n');
+
+    if (navigator.share) {
+      navigator.share({ title: 'Recibo de Seguro', text: texto }).catch(()=>{});
+    } else {
+      window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+    }
+  }
+
+  // ---------- Nuevo recibo ----------
+  function nuevoRecibo() {
+    ['poliza','cliente','domicilio','concepto','total','d_prima','d_ccs','d_rlea','d_ips','d_otros'].forEach(id => $(id).value = '');
+    $('num_recibo').value = siguienteNumero();
+    $('fecha').value = hoyISO();
+    $('recibo').classList.remove('visible');
+    window.scrollTo({top: 0, behavior: 'smooth'});
+    $('cliente').focus();
+  }
+
+  // ---------- Inicio: precargado con el ejemplo de Ana María ----------
+  cargarEmisor();
+  $('num_recibo').value = siguienteNumero();
+  $('fecha').value = hoyISO();
+  $('desde').value = '2026-05-01';
+  $('hasta').value = '2026-05-31';
+  $('cliente').value = 'ANA MARIA DIAZ GARCIA';
+  $('domicilio').value = 'Calle California 19, Aguadulce, Almería';
+  $('producto').value = 'Protección Familiar';
+  $('concepto').value = 'Mes de mayo';
+  $('total').value = '42,00';
+</script>
+</body>
+</html>
