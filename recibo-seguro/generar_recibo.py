@@ -33,7 +33,7 @@ DATOS = {
     "por_empresa":   "POR MERIDIANO S.A.",
 
     # --- Cabecera de la rejilla (fila 1) ---
-    "poliza":        "",                       # Nº DE PÓLIZA
+    "poliza":        "D24/000783",             # Nº DE PÓLIZA
     "origina":       "OFICINA DE ALMERÍA",     # ORIGINA
     "zona_cobro":    "ALM-001",                # ZONA COBRO
 
