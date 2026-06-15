@@ -51,10 +51,10 @@ DATOS = {
     ],
 
     # --- Desglose (deja vacío lo que no apliques) ---
-    "prima":         "42,00",
-    "ccs":           "",
-    "rlea":          "",
-    "ips":           "",
+    "prima":         "39,84",   # base, proporción del recibo modelo
+    "ccs":           "0,02",    # ≈ 0,05 % s/prima
+    "rlea":          "0,06",    # ≈ 0,15 % s/prima
+    "ips":           "2,08",    # ≈ 5,23 % s/prima (según modelo)
     "otros":         "",
     "total":         "42,00",
 
