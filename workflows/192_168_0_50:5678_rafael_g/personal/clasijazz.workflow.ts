@@ -445,7 +445,7 @@ return $json;`,
     source_storefront, payload_json, last_seen
 )
 VALUES (
-    '{{ $json["data.data.events"].event_id }}',
+    '{{ ($json["data.data.events"].event_id || "").replace(/'/g, "''") }}',
     '{{ ($json["data.data.events"].name || "").replace(/'/g, "''") }}',
     '{{ ($json["data.data.events"].datetime_text || "").replace(/'/g, "''") }}',
     '{{ ($json["data.data.events"].venue || "").replace(/'/g, "''") }}',
@@ -817,7 +817,7 @@ WHERE event_id = '{{ ($json.event_id || "").replace(/'/g, "''") }}'
     cartel_url, screenshot_url, ticketera_url, payload_json
 )
 VALUES (
-    '{{ $json.event_id }}',
+    '{{ ($json.event_id || "").replace(/'/g, "''") }}',
     '{{ ($json.titulo || "").replace(/'/g, "''") }}',
     '{{ ($json.titulo_original || "").replace(/'/g, "''") }}',
     '{{ ($json.observacion || "").replace(/'/g, "''") }}',
