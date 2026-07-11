@@ -2,7 +2,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
 // Workflow : SCRAPPER FLOWTE
-// Nodes   : 21  |  Connections: 22
+// Nodes   : 24  |  Connections: 27
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
@@ -11,10 +11,12 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // ExecuteASqlQuery1                  postgres                   [creds]
 // Wait                               wait
 // ScheduleTrigger                    scheduleTrigger
+// WebhookTrigger                     webhook
 // LoadPromoterConfig                 postgres                   [creds]
+// FallbackDetalle                    httpRequest                [onError→regular]
 // NormalizarEventos                  code
 // InsertNormalizedEvents             postgres                   [creds]
-// Scrape                             firecrawl                  [creds] [retry]
+// Scrape                             firecrawl                  [onError→out(1)] [creds] [retry]
 // LeerAdjuntosPendientes             postgres                   [creds]
 // LoopOverPendingAdjuntos            splitInBatches
 // FiltrarAdjuntosValidos             code
@@ -25,7 +27,8 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // MarcarAdjuntosDescargados          postgres                   [creds]
 // NormalizarTitulo                   code
 // ExecuteASqlQueryFront              postgres                   [creds]
-// Scrape1                            firecrawl                  [creds]
+// Scrape1                            firecrawl                  [onError→out(1)] [creds] [retry]
+// FallbackListado                    httpRequest                [onError→regular]
 // ParsearEventos                     code
 // LoopOverItems                      splitInBatches
 //
@@ -54,6 +57,12 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 //                        → NormalizarEventos
 //                          → InsertNormalizedEvents
 //                            → LoopOverItems (↩ loop)
+//                       .out(1) → FallbackDetalle
+//                          → NormalizarEventos (↩ loop)
+//       .out(1) → FallbackListado
+//          → ParsearEventos (↩ loop)
+// WebhookTrigger
+//    → LoadPromoterConfig (↩ loop)
 // </workflow-map>
 
 // =====================================================================
@@ -64,6 +73,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
     id: '2qYQ1PxmsJhWhT1q',
     name: 'SCRAPPER FLOWTE',
     active: true,
+    isArchived: false,
     tags: ['SCRAPPER'],
     settings: {
         executionOrder: 'v1',
@@ -73,6 +83,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
         callerPolicy: 'workflowsFromSameOwner',
         availableInMCP: false,
         errorWorkflow: 'IkqnFDu34CjPjXBj',
+        executionTimeout: 3600,
     },
 })
 export class ScrapperFlowteWorkflow {
@@ -105,13 +116,28 @@ export class ScrapperFlowteWorkflow {
     })
     ExecuteASqlQuery1 = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_front_eventos',
+            mode: 'list',
+        },
         query: `SELECT f.id, f.event_id, f.name, f.event_url, f.venue
 FROM raw_front_eventos f
 LEFT JOIN raw_detalle_eventos d ON f.event_id = d.event_id
 WHERE f.event_url IS NOT NULL
   AND d.id IS NULL
+  -- Solo eventos de ESTA fuente (flowte almeria-cultura). Antes cogía los de
+  -- menor id de CUALQUIER fuente y, al construir la URL de detalle como flowte,
+  -- se atascaba en eventos no-flowte y nunca detallaba los de almeria-cultura
+  -- (= sin cartel → sin imagen en cancerbero). Fix 2026-06-18.
+  AND f.source_storefront = 'almeria-cultura-401'
 ORDER BY f.id
-LIMIT 5;`,
+LIMIT 25;`,
         options: {},
     };
 
@@ -136,11 +162,26 @@ LIMIT 5;`,
         rule: {
             interval: [
                 {
-                    field: 'weeks',
-                    triggerAtDay: [3, 5, 1, 2, 4, 6, 0],
+                    field: 'cronExpression',
+                    expression: '0 0 * * 1-6',
                 },
             ],
         },
+    };
+
+    @node({
+        id: 'flowte-webhook-trigger',
+        webhookId: 'flowte-trigger-test',
+        name: 'Webhook Trigger',
+        type: 'n8n-nodes-base.webhook',
+        version: 2,
+        position: [-1312, -240],
+    })
+    WebhookTrigger = {
+        httpMethod: 'POST',
+        path: 'flowte-trigger-test',
+        responseMode: 'lastNode',
+        options: {},
     };
 
     @node({
@@ -153,11 +194,48 @@ LIMIT 5;`,
     })
     LoadPromoterConfig = {
         operation: 'executeQuery',
-        query: `SELECT 
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'promotores_configuracion',
+            mode: 'list',
+        },
+        query: `SELECT
     promotor_id, promotor_nombre, url_lista, localidad_default,
     parser_lista_tipo, dropbox_folder_base
 FROM promotores_configuracion
 WHERE promotor_id = 'ayto_alm_cul';`,
+        options: {},
+    };
+
+    @node({
+        id: 'flowte-fallback-detalle',
+        name: 'Fallback Detalle',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [944, -208],
+        onError: 'continueRegularOutput',
+    })
+    FallbackDetalle = {
+        method: 'POST',
+        url: 'http://172.18.0.1:8021/scrape',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'X-Api-Key',
+                    value: '={{ $env.SGF_API_KEY }}',
+                },
+            ],
+        },
+        sendBody: true,
+        specifyBody: 'json',
+        jsonBody:
+            '={{ JSON.stringify({ url: ($json.event_url || $(\'Loop Over Items\').all()[$itemIndex].json.event_url), formats: ["html", "metadata"], wait_ms: 10000 }) }}',
         options: {},
     };
 
@@ -356,7 +434,10 @@ for (let i = 0; i < items.length; i++) {
     const observacion = collapseWhitespace($('#select-event-desc').text());
     const dateTimeRaw = extractDateTimeText($, observacion);
     const parsedDateTime = parseDateTimeText(dateTimeRaw);
-    const cartelUrl = $('img#select-event-img').first().attr('src') || '';
+    // Flowte sirve dos versiones: <id>-<ts>-resize.<ext> (preview) y <id>-<ts>.<ext> (completa).
+    // Quitamos "-resize" para guardar y descargar la imagen completa en Dropbox.
+    const cartelUrlRaw = $('img#select-event-img').first().attr('src') || '';
+    const cartelUrl = cartelUrlRaw.replace(/-resize(\\.[A-Za-z0-9]{2,5})(\\?|$)/, '$1$2');
     const descHtml = $('#select-event-desc').html() || '';
     const es_gratuito = /ENTRADA GRATUITA/i.test(descHtml);
 
@@ -413,6 +494,16 @@ return result;`,
     })
     InsertNormalizedEvents = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_detalle_eventos',
+            mode: 'list',
+        },
         query: `INSERT INTO raw_detalle_eventos (
     event_id,
     titulo,
@@ -485,6 +576,7 @@ DO UPDATE SET
         version: 1,
         position: [944, -432],
         credentials: { firecrawlApi: { id: '3FsKPT3ZQeVfmMkM', name: 'Firecrawl account' } },
+        onError: 'continueErrorOutput',
         retryOnFail: true,
         waitBetweenTries: 5000,
     })
@@ -533,6 +625,16 @@ DO UPDATE SET
     })
     LeerAdjuntosPendientes = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_eventos_adjuntos',
+            mode: 'list',
+        },
         query: `WITH detail_context AS (
     SELECT
       d.event_id,
@@ -720,6 +822,16 @@ DO UPDATE SET
     })
     RegistrarAdjunto = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_eventos_adjuntos',
+            mode: 'list',
+        },
         query: `INSERT INTO raw_eventos_adjuntos (
     event_id,
     tipo,
@@ -756,6 +868,16 @@ DO UPDATE SET
     })
     MarcarAdjuntosDescargados = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_detalle_eventos',
+            mode: 'list',
+        },
         query: `UPDATE raw_detalle_eventos d
   SET adjuntos_descargados = (
     (COALESCE(d.cartel_url, '') = '' OR EXISTS (
@@ -814,7 +936,7 @@ result = result
 result = result.toUpperCase();
 
 // Permitir letras, números, espacios, Ñ, comas y guiones
-result = result.replace(/[^A-ZÑ0-9,\\- ]/g, '');
+result = result.replace(/[^A-ZÑ0-9,.:+\\- ]/g, '');
 
 // Limpiar espacios
 result = result.replace(/\\s+/g, ' ').trim();
@@ -835,6 +957,16 @@ return $json;`,
     })
     ExecuteASqlQueryFront = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_front_eventos',
+            mode: 'list',
+        },
         query: `INSERT INTO raw_front_eventos (
     event_id,
     name,
@@ -874,6 +1006,8 @@ DO UPDATE SET
         version: 1,
         position: [-864, -432],
         credentials: { firecrawlApi: { id: '3FsKPT3ZQeVfmMkM', name: 'Firecrawl account' } },
+        onError: 'continueErrorOutput',
+        retryOnFail: true,
     })
     Scrape1 = {
         operation: 'scrape',
@@ -892,6 +1026,33 @@ DO UPDATE SET
             },
         },
         requestOptions: {},
+    };
+
+    @node({
+        id: 'flowte-fallback-listado',
+        name: 'Fallback Listado',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [-864, -208],
+        onError: 'continueRegularOutput',
+    })
+    FallbackListado = {
+        method: 'POST',
+        url: 'http://172.18.0.1:8021/scrape',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'X-Api-Key',
+                    value: '={{ $env.SGF_API_KEY }}',
+                },
+            ],
+        },
+        sendBody: true,
+        specifyBody: 'json',
+        jsonBody:
+            '={{ JSON.stringify({ url: ($json.url_lista || $(\'Load Promoter Config\').first().json.url_lista), formats: ["html"], wait_ms: 6000 }) }}',
+        options: {},
     };
 
     @node({
@@ -994,10 +1155,15 @@ return {
         this.NormalizarTitulo.out(0).to(this.ExecuteASqlQueryFront.in(0));
         this.Wait.out(0).to(this.SplitOut.in(0));
         this.ScheduleTrigger.out(0).to(this.LoadPromoterConfig.in(0));
+        this.WebhookTrigger.out(0).to(this.LoadPromoterConfig.in(0));
         this.LoadPromoterConfig.out(0).to(this.Scrape1.in(0));
         this.Scrape1.out(0).to(this.ParsearEventos.in(0));
+        this.Scrape1.out(1).to(this.FallbackListado.in(0));
+        this.FallbackListado.out(0).to(this.ParsearEventos.in(0));
         this.ParsearEventos.out(0).to(this.Wait.in(0));
         this.Scrape.out(0).to(this.NormalizarEventos.in(0));
+        this.Scrape.out(1).to(this.FallbackDetalle.in(0));
+        this.FallbackDetalle.out(0).to(this.NormalizarEventos.in(0));
         this.NormalizarEventos.out(0).to(this.InsertNormalizedEvents.in(0));
         this.LoopOverItems.out(0).to(this.LeerAdjuntosPendientes.in(0));
         this.LoopOverItems.out(1).to(this.Scrape.in(0));

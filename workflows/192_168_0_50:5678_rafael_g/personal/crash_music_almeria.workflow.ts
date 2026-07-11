@@ -1,8 +1,8 @@
 import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
-// Workflow : SCRAPPER CLASIJAZZ
-// Nodes   : 29  |  Connections: 33
+// Workflow : SCRAPPER CRASH MUSIC ALMERIA
+// Nodes   : 26  |  Connections: 29
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
@@ -11,22 +11,19 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // ManualTrigger                      manualTrigger
 // WebhookTrigger                     webhook
 // LoadPromoterConfig                 postgres                   [creds]
-// GenerarPaginas                     code
 // ScrapeListado                      firecrawl                  [onError→out(1)] [creds] [retry]
 // FallbackListado                    httpRequest                [onError→regular]
-// ParsearListadoClasijazz            code
+// ParsearListadoCrash                code
 // Wait                               wait
 // SplitOut                           splitOut
 // NormalizarTitulo                   code
 // UpsertRawFrontEventos              postgres                   [creds]
 // SelectFrontSinDetalle              postgres                   [creds]
 // LoopEventos                        splitInBatches
-// ScrapeDetalleClasijazz             firecrawl                  [onError→out(1)] [creds] [retry]
+// ScrapeDetalleCrash                 firecrawl                  [onError→out(1)] [creds] [retry]
 // FallbackDetalle                    httpRequest                [onError→regular]
-// ParsearDetalleClasijazz            code
+// ParsearDetalleCrash                code
 // ConsolidarDetalle                  code
-// AceptarEspectaculo                 if
-// MarcarNoEspectaculoEnFront         postgres                   [creds]
 // UpsertRawDetalleEventos            postgres                   [creds]
 // LeerAdjuntosPendientes             postgres                   [creds]
 // LoopAdjuntos                       splitInBatches
@@ -41,36 +38,32 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // ──────────────────────────────────────────────────────────────────
 // ScheduleTrigger
 //    → LoadPromoterConfig
-//      → GenerarPaginas
-//        → ScrapeListado
-//          → ParsearListadoClasijazz
-//            → Wait
-//              → SplitOut
-//                → NormalizarTitulo
-//                  → UpsertRawFrontEventos
-//                    → SelectFrontSinDetalle
-//                      → LoopEventos
-//                        → LeerAdjuntosPendientes
-//                          → LoopAdjuntos
-//                           .out(1) → FiltrarAdjuntosValidos
-//                              → PrepararAdjuntoDropbox
-//                                → DescargarAdjunto
-//                                  → GuardarEnDropbox
-//                                    → RegistrarAdjunto
-//                                      → MarcarAdjuntosDescargados
-//                                        → LoopAdjuntos (↩ loop)
-//                       .out(1) → ScrapeDetalleClasijazz
-//                          → ParsearDetalleClasijazz
-//                            → ConsolidarDetalle
-//                              → AceptarEspectaculo
-//                                → UpsertRawDetalleEventos
-//                                  → LoopEventos (↩ loop)
-//                               .out(1) → MarcarNoEspectaculoEnFront
-//                                  → LoopEventos (↩ loop)
-//                         .out(1) → FallbackDetalle
-//                            → ParsearDetalleClasijazz (↩ loop)
-//         .out(1) → FallbackListado
-//            → ParsearListadoClasijazz (↩ loop)
+//      → ScrapeListado
+//        → ParsearListadoCrash
+//          → Wait
+//            → SplitOut
+//              → NormalizarTitulo
+//                → UpsertRawFrontEventos
+//                  → SelectFrontSinDetalle
+//                    → LoopEventos
+//                      → LeerAdjuntosPendientes
+//                        → LoopAdjuntos
+//                         .out(1) → FiltrarAdjuntosValidos
+//                            → PrepararAdjuntoDropbox
+//                              → DescargarAdjunto
+//                                → GuardarEnDropbox
+//                                  → RegistrarAdjunto
+//                                    → MarcarAdjuntosDescargados
+//                                      → LoopAdjuntos (↩ loop)
+//                     .out(1) → ScrapeDetalleCrash
+//                        → ParsearDetalleCrash
+//                          → ConsolidarDetalle
+//                            → UpsertRawDetalleEventos
+//                              → LoopEventos (↩ loop)
+//                       .out(1) → FallbackDetalle
+//                          → ParsearDetalleCrash (↩ loop)
+//       .out(1) → FallbackListado
+//          → ParsearListadoCrash (↩ loop)
 // ManualTrigger
 //    → LoadPromoterConfig (↩ loop)
 // WebhookTrigger
@@ -82,8 +75,8 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // =====================================================================
 
 @workflow({
-    id: '3GANMceX1JQdPXj1',
-    name: 'SCRAPPER CLASIJAZZ',
+    id: 'UhaMoYMSPmoTdKuC',
+    name: 'SCRAPPER CRASH MUSIC ALMERIA',
     active: true,
     isArchived: false,
     settings: {
@@ -97,59 +90,59 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
         executionTimeout: 3600,
     },
 })
-export class ScrapperClasijazzWorkflow {
+export class ScrapperCrashMusicAlmeriaWorkflow {
     // =====================================================================
     // CONFIGURATION DES NOEUDS
     // =====================================================================
 
     @node({
-        id: 'clasi-schedule-trigger',
+        id: 'crash-schedule-trigger',
         name: 'Schedule Trigger',
         type: 'n8n-nodes-base.scheduleTrigger',
         version: 1.3,
-        position: [-1820, 0],
+        position: [-1600, 0],
     })
     ScheduleTrigger = {
         rule: {
             interval: [
                 {
                     field: 'cronExpression',
-                    expression: '0 5 * * 1-6',
+                    expression: '0 1 * * 1-6',
                 },
             ],
         },
     };
 
     @node({
-        id: 'clasi-manual-trigger',
+        id: 'crash-manual-trigger',
         name: 'Manual Trigger',
         type: 'n8n-nodes-base.manualTrigger',
         version: 1,
-        position: [-1820, 192],
+        position: [-1600, 192],
     })
     ManualTrigger = {};
 
     @node({
-        id: 'clasi-webhook-trigger',
-        webhookId: 'clasijazz-trigger-test',
+        id: 'crash-webhook-trigger',
+        webhookId: 'crash-trigger-test',
         name: 'Webhook Trigger',
         type: 'n8n-nodes-base.webhook',
         version: 2,
-        position: [-1820, 384],
+        position: [-1600, 384],
     })
     WebhookTrigger = {
         httpMethod: 'POST',
-        path: 'clasijazz-trigger-test',
+        path: 'crash-trigger-test',
         responseMode: 'lastNode',
         options: {},
     };
 
     @node({
-        id: 'clasi-load-promoter-config',
+        id: 'crash-load-promoter-config',
         name: 'Load Promoter Config',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
-        position: [-1600, 0],
+        position: [-1376, 0],
         credentials: { postgres: { id: 'zKHsX0gkTrNFTpm5', name: 'Postgres account' } },
     })
     LoadPromoterConfig = {
@@ -168,35 +161,13 @@ export class ScrapperClasijazzWorkflow {
     promotor_id, promotor_nombre, url_lista, localidad_default,
     parser_lista_tipo, dropbox_folder_base
 FROM promotores_configuracion
-WHERE promotor_id = 'clasijazz'
+WHERE promotor_id = 'crash_music'
   AND habilitado = true;`,
         options: {},
     };
 
     @node({
-        id: 'clasi-generar-paginas',
-        name: 'Generar Paginas',
-        type: 'n8n-nodes-base.code',
-        version: 2,
-        position: [-1376, 0],
-    })
-    GenerarPaginas = {
-        jsCode: `const promoter = ($input.all()[0] && $input.all()[0].json) || {};
-const TOTAL_PAGES = 3;
-const out = [];
-for (let p = 1; p <= TOTAL_PAGES; p++) {
-  const url = p === 1
-    ? 'https://clasijazz.com/eventos/'
-    : 'https://clasijazz.com/eventos/lista/p%C3%A1gina/' + p + '/';
-  out.push({
-    json: { ...promoter, url_lista: url, page_index: p },
-  });
-}
-return out;`,
-    };
-
-    @node({
-        id: 'clasi-scrape-listado',
+        id: 'crash-scrape-listado',
         name: 'Scrape Listado',
         type: '@mendable/n8n-nodes-firecrawl.firecrawl',
         version: 1,
@@ -219,14 +190,15 @@ return out;`,
                 },
                 onlyMainContent: false,
                 headers: {},
-                waitFor: 2500,
+                waitFor: 3000,
+                proxy: 'stealth',
             },
         },
         requestOptions: {},
     };
 
     @node({
-        id: 'clasi-fallback-listado',
+        id: 'crash-fallback-listado',
         name: 'Fallback Listado',
         type: 'n8n-nodes-base.httpRequest',
         version: 4.4,
@@ -248,153 +220,136 @@ return out;`,
         sendBody: true,
         specifyBody: 'json',
         jsonBody:
-            '={{ JSON.stringify({ url: ($json.url_lista || $(\'Generar Paginas\').all()[$itemIndex].json.url_lista), formats: ["html"], wait_ms: 3500 }) }}',
+            '={{ JSON.stringify({ url: ($json.url_lista || $(\'Load Promoter Config\').first().json.url_lista), formats: ["html"], wait_ms: 3000 }) }}',
         options: {},
     };
 
     @node({
-        id: 'clasi-parsear-listado',
-        name: 'Parsear Listado CLASIJAZZ',
+        id: 'crash-parsear-listado',
+        name: 'Parsear Listado CRASH',
         type: 'n8n-nodes-base.code',
         version: 2,
         position: [-928, 0],
     })
-    ParsearListadoClasijazz = {
+    ParsearListadoCrash = {
         jsCode: `const cheerio = require('cheerio');
+const html = ($json.data && $json.data.html) || ($json.data && $json.data.rawHtml) || '';
 
-const items = $input.all();
-const seen = new Set();
-const events = [];
+if (!html) {
+  return [{ json: { data: { data: { events: [] } } } }];
+}
+
+const BASE = 'https://entradas.crashmusic.es/';
+const $ = cheerio.load(html);
 
 function clean(t) {
   return String(t || '').replace(/\\s+/g, ' ').trim();
 }
 
-function normalize(t) {
-  return clean(t).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase();
+function absoluteUrl(rel) {
+  const r = String(rel || '').trim();
+  if (!r) return '';
+  if (r.startsWith('http://') || r.startsWith('https://')) return r;
+  return BASE + r.replace(/^\\/+/, '');
 }
 
-// Reglas de filtrado (2026-06-22): NO se filtra por precio. Un concierto a 3-5€
-// o gratis genera derechos igual, y si descartamos por precio aquí, otra fuente
-// SIN precio nos lo cuela igual y perdemos el dedup. Se aceptan TODOS los que
-// por título sean espectáculo (conciertos a cualquier precio, incl. gratis);
-// solo se descarta por TÍTULO lo que claramente no es espectáculo (talleres,
-// cursos, audiciones de alumnos, charlas…). Cancerbero filtra/unifica luego.
-const NOT_ESPECTACULO_BASE = /TALLER|MASTERCLASS|MASTER\\s+CLASS|WORKSHOP|CURSO|CLASE\\s+DE|INTERCAMBIO|APERITIVO|CHARLA|COLOQUIO|CONFERENCIA|MESA\\s+REDONDA|JORNADA\\s+DE\\s+CONVIVENCIA|VISITA\\s+GUIADA|RUTA\\s+GUIADA|AUDICION|ALUMN|ENSAYO/;
-const ES_CINE = /CICLOS?\\s+DE\\s+CINE|CINE\\s*-?\\s*FORUM|PROYECCION/;
-const PRECIO_MINIMO = 12;
+const MONTHS_ABBR = {
+  ENE: '01', JAN: '01',
+  FEB: '02',
+  MAR: '03',
+  ABR: '04', APR: '04',
+  MAY: '05',
+  JUN: '06',
+  JUL: '07',
+  AGO: '08', AUG: '08',
+  SEP: '09', SEPT: '09',
+  OCT: '10',
+  NOV: '11',
+  DIC: '12', DEC: '12',
+};
 
-function detectarPrecioListado(text) {
-  // Devuelve null si desconocido, 0 si gratuito, o el precio del PÚBLICO
-  // (el más alto). En Clasijazz los precios vienen "12€ NS / 6€ S": cuenta
-  // el de NO socio (público) para el umbral, no el de socio. Fix 2026-06-19.
-  const t = String(text || '');
-  if (/ENTRADA\\s+LIBRE|GRATUIT[OA]|GRATIS/i.test(t)) return 0;
-  const matches = [...t.matchAll(/(\\d+(?:[.,]\\d{1,2})?)\\s*€/g)]
-    .map((m) => parseFloat(m[1].replace(',', '.')))
-    .filter((n) => Number.isFinite(n) && n > 0 && n < 1000);
-  return matches.length ? Math.max(...matches) : null;
+function parseFechaCorta(text) {
+  const m = String(text || '').match(/(\\d{1,2})\\s+([A-Za-zñÑ]{3,5})\\.?\\s+(\\d{4})/);
+  if (!m) return '';
+  const mes = MONTHS_ABBR[m[2].toUpperCase().replace(/\\.$/, '')];
+  if (!mes) return '';
+  return m[3] + '-' + mes + '-' + String(m[1]).padStart(2, '0');
 }
 
-function clasificarEspectaculo(tituloNorm, precio) {
-  // YA NO se filtra por precio (2026-06-22): conciertos a cualquier precio o
-  // gratis entran; lo que no es espectáculo se descarta SOLO por título.
-  // (precio se sigue capturando en el payload, solo a título informativo.)
-  if (ES_CINE.test(tituloNorm)) return true;
-  if (NOT_ESPECTACULO_BASE.test(tituloNorm)) return false;
-  return true;
+function splitTitulo(h5) {
+  return String(h5 || '')
+    .split(/\\s*-\\s*|\\s*–\\s*/)
+    .map((p) => clean(p))
+    .filter(Boolean);
 }
 
-function pickCartelUrl($c) {
-  const $img = $c.find('img').first();
-  if (!$img.length) return '';
-  const candidates = [
-    $img.attr('data-lazy-src'),
-    $img.attr('data-src'),
-    $img.attr('src'),
-  ].filter(Boolean);
-  for (const u of candidates) {
-    if (u && !u.startsWith('data:')) return u.trim();
+function looksLikeDate(s) {
+  const norm = String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase();
+  if (/^\\d/.test(norm)) return true;
+  if (/DE\\s+(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)/.test(norm)) return true;
+  if (/^(LUNES|MARTES|MIERCOLES|JUEVES|VIERNES|SABADO|DOMINGO)/.test(norm)) return true;
+  return false;
+}
+
+const seen = new Set();
+const events = [];
+
+$('.card').each((_, c) => {
+  const $c = $(c);
+  const img = $c.find('img').first();
+  const alt = clean(img.attr('alt') || '');
+  if (!/CONCIERTO|FEST|ALMER|HUERCAL/i.test(alt)) return;
+
+  const $a = $c.parent('a');
+  const href = clean($a.attr('href') || '');
+  if (!href || seen.has(href)) return;
+  seen.add(href);
+
+  const slug = href.split('?')[0].split('#')[0].replace(/\\/+$/, '').split('/').filter(Boolean).pop() || '';
+  if (!slug) return;
+  const event_id = 'crash_' + slug;
+  const event_url = href.startsWith('http') ? href : absoluteUrl(href);
+
+  const cartel_url = absoluteUrl(img.attr('src') || '');
+  const date_text = clean($c.find('.card-body p').first().text());
+  const h5 = clean($c.find('.card-body h5').first().text());
+  const fecha_inicio = parseFechaCorta(date_text);
+
+  const partes = splitTitulo(h5);
+  const titulo = partes[0] || h5;
+  const ciudad = partes[1] || '';
+  let venue = partes[2] || '';
+  let fecha_letras = partes[3] || '';
+  // En festivales con sólo 3 partes ("VIVA BOOM FEST 2026 - HUÉRCAL DE ALMERÍA - 23 Y 24 DE MAYO")
+  // partes[2] es la fecha, no el venue. Detectamos y reasignamos.
+  if (venue && looksLikeDate(venue)) {
+    fecha_letras = fecha_letras || venue;
+    venue = '';
   }
-  // fallback noscript
-  const ns = $c.find('noscript img').first();
-  if (ns.length) {
-    const src = ns.attr('src') || '';
-    if (src && !src.startsWith('data:')) return src.trim();
-  }
-  return '';
-}
 
-for (const it of items) {
-  const html = (it.json && it.json.data && it.json.data.html) || '';
-  if (!html) continue;
-  const $ = cheerio.load(html);
-
-  $('article.tribe-events-calendar-list__event').each((_, c) => {
-    const $c = $(c);
-    const $a = $c.find('.tribe-events-calendar-list__event-title-link, h3 a').first();
-    const titulo = clean($a.text());
-    const href = clean($a.attr('href') || '');
-    if (!titulo || !href) return;
-
-    // event_id estable: path post-/evento/ con / -> _
-    const path = href.replace(/^https?:\\/\\/[^\\/]+\\/evento\\//, '').replace(/^\\/+|\\/+$/g, '');
-    if (!path || path.startsWith('http')) return;
-    const event_id = 'clasijazz_' + path.replace(/\\//g, '_');
-    if (seen.has(event_id)) return;
-    seen.add(event_id);
-
-    const $time = $c.find('time').first();
-    const datetime_iso = clean($time.attr('datetime') || '');
-    const datetime_text = clean($time.text());
-
-    let fecha_inicio = '';
-    let hora_inicio = '';
-    if (datetime_iso) {
-      const m = datetime_iso.match(/^(\\d{4}-\\d{2}-\\d{2})(?:T(\\d{2}):(\\d{2}))?/);
-      if (m) {
-        fecha_inicio = m[1];
-        if (m[2]) hora_inicio = m[2] + ':' + m[3];
-      }
-    }
-    if (!hora_inicio) {
-      const horaTxt = datetime_text.match(/(\\d{1,2}):(\\d{2})/);
-      if (horaTxt) hora_inicio = String(parseInt(horaTxt[1], 10)).padStart(2, '0') + ':' + horaTxt[2];
-    }
-
-    const desc = clean($c.find('.tribe-events-calendar-list__event-description, .tribe-events-content-description, .tribe-events-calendar-list__event-description-content').first().text());
-    const cartel_url = pickCartelUrl($c);
-
-    const titNorm = normalize(titulo);
-    const precio_listado = detectarPrecioListado(desc);
-    const es_espectaculo = clasificarEspectaculo(titNorm, precio_listado);
-
-    events.push({
-      event_id,
-      name: titulo,
-      datetime_text,
-      venue: '',
-      event_url: href,
-      cartel_url,
-      slug: path,
-      datetime_iso,
-      fecha_inicio_listado: fecha_inicio,
-      hora_listado: hora_inicio,
-      descripcion_listado: desc,
-      precio_listado,
-      es_espectaculo,
-      es_cine: ES_CINE.test(titNorm),
-      estado_listado: es_espectaculo ? 'En cartelera' : 'Otra actividad',
-    });
+  events.push({
+    event_id,
+    name: titulo,
+    datetime_text: date_text,
+    venue: venue || ciudad,
+    event_url,
+    ticketera_url: event_url,
+    cartel_url,
+    slug,
+    h5_full: h5,
+    ciudad,
+    fecha_inicio_listado: fecha_inicio,
+    fecha_letras,
+    estado_listado: 'Comprar',
   });
-}
+});
 
 return [{ json: { data: { data: { events } } } }];`,
     };
 
     @node({
-        id: 'clasi-wait',
-        webhookId: 'clasi-wait-1',
+        id: 'crash-wait',
+        webhookId: 'crash-wait-1',
         name: 'Wait',
         type: 'n8n-nodes-base.wait',
         version: 1.1,
@@ -403,7 +358,7 @@ return [{ json: { data: { data: { events } } } }];`,
     Wait = {};
 
     @node({
-        id: 'clasi-split-out',
+        id: 'crash-split-out',
         name: 'Split Out',
         type: 'n8n-nodes-base.splitOut',
         version: 1,
@@ -418,7 +373,7 @@ return [{ json: { data: { data: { events } } } }];`,
     };
 
     @node({
-        id: 'clasi-normalizar-titulo',
+        id: 'crash-normalizar-titulo',
         name: 'Normalizar Titulo',
         type: 'n8n-nodes-base.code',
         version: 2,
@@ -456,7 +411,7 @@ return $json;`,
     };
 
     @node({
-        id: 'clasi-upsert-raw-front',
+        id: 'crash-upsert-raw-front',
         name: 'Upsert raw_front_eventos',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
@@ -480,12 +435,12 @@ return $json;`,
     source_storefront, payload_json, last_seen
 )
 VALUES (
-    '{{ ($json["data.data.events"].event_id || "").replace(/'/g, "''") }}',
+    '{{ $json["data.data.events"].event_id }}',
     '{{ ($json["data.data.events"].name || "").replace(/'/g, "''") }}',
     '{{ ($json["data.data.events"].datetime_text || "").replace(/'/g, "''") }}',
     '{{ ($json["data.data.events"].venue || "").replace(/'/g, "''") }}',
     '{{ ($json["data.data.events"].event_url || "").replace(/'/g, "''") }}',
-    'clasijazz',
+    'crash_music_almeria',
     '{{ JSON.stringify($json["data.data.events"]).replace(/'/g, "''") }}'::jsonb,
     NOW()
 )
@@ -502,7 +457,7 @@ DO UPDATE SET
     };
 
     @node({
-        id: 'clasi-select-front-sin-detalle',
+        id: 'crash-select-front-sin-detalle',
         name: 'Select front sin detalle',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
@@ -524,16 +479,15 @@ DO UPDATE SET
         query: `SELECT f.id, f.event_id, f.name, f.event_url, f.venue, f.payload_json
 FROM raw_front_eventos f
 LEFT JOIN raw_detalle_eventos d ON f.event_id = d.event_id
-WHERE f.source_storefront = 'clasijazz'
+WHERE f.source_storefront = 'crash_music_almeria'
   AND f.event_url IS NOT NULL
   AND d.id IS NULL
-  AND COALESCE((f.payload_json->>'es_espectaculo')::boolean, true) = true
 ORDER BY f.id;`,
         options: {},
     };
 
     @node({
-        id: 'clasi-loop-eventos',
+        id: 'crash-loop-eventos',
         name: 'Loop eventos',
         type: 'n8n-nodes-base.splitInBatches',
         version: 3,
@@ -545,8 +499,8 @@ ORDER BY f.id;`,
     };
 
     @node({
-        id: 'clasi-scrape-detalle',
-        name: 'Scrape Detalle CLASIJAZZ',
+        id: 'crash-scrape-detalle',
+        name: 'Scrape Detalle CRASH',
         type: '@mendable/n8n-nodes-firecrawl.firecrawl',
         version: 1,
         position: [640, 96],
@@ -555,7 +509,7 @@ ORDER BY f.id;`,
         retryOnFail: true,
         waitBetweenTries: 5000,
     })
-    ScrapeDetalleClasijazz = {
+    ScrapeDetalleCrash = {
         operation: 'scrape',
         url: '={{ $json.event_url }}',
         scrapeOptions: {
@@ -576,14 +530,15 @@ ORDER BY f.id;`,
                 },
                 onlyMainContent: false,
                 headers: {},
-                waitFor: 2500,
+                waitFor: 4000,
+                proxy: 'stealth',
             },
         },
         requestOptions: {},
     };
 
     @node({
-        id: 'clasi-fallback-detalle',
+        id: 'crash-fallback-detalle',
         name: 'Fallback Detalle',
         type: 'n8n-nodes-base.httpRequest',
         version: 4.4,
@@ -605,18 +560,18 @@ ORDER BY f.id;`,
         sendBody: true,
         specifyBody: 'json',
         jsonBody:
-            '={{ JSON.stringify({ url: ($json.event_url || $(\'Loop eventos\').first().json.event_url), formats: ["html", "metadata"], wait_ms: 2500 }) }}',
+            '={{ JSON.stringify({ url: ($json.event_url || $(\'Loop eventos\').first().json.event_url), formats: ["html", "metadata"], wait_ms: 4000 }) }}',
         options: {},
     };
 
     @node({
-        id: 'clasi-parsear-detalle',
-        name: 'Parsear Detalle CLASIJAZZ',
+        id: 'crash-parsear-detalle',
+        name: 'Parsear Detalle CRASH',
         type: 'n8n-nodes-base.code',
         version: 2,
         position: [864, 96],
     })
-    ParsearDetalleClasijazz = {
+    ParsearDetalleCrash = {
         mode: 'runOnceForEachItem',
         jsCode: `const cheerio = require('cheerio');
 
@@ -632,91 +587,138 @@ const fp = front.payload_json || {};
 const event_id = front.event_id || fp.event_id || '';
 const titulo_listado = front.name || fp.name || '';
 const cartel_listado = fp.cartel_url || '';
-const slug = fp.slug || (event_id || '').replace(/^clasijazz_/, '');
+const slug = fp.slug || (event_id || '').replace(/^crash_/, '');
 const fecha_inicio_listado = fp.fecha_inicio_listado || '';
-const hora_listado = fp.hora_listado || '';
-const datetime_text_listado = front.datetime_text || fp.datetime_text || '';
-const desc_listado = fp.descripcion_listado || '';
+const fecha_letras = fp.fecha_letras || '';
+const ciudad = fp.ciudad || '';
+const venue_listado = fp.venue || front.venue || '';
+const h5_full = fp.h5_full || '';
 
 function clean(t) { return String(t || '').replace(/\\s+/g, ' ').trim(); }
+function normalizeUpper(t) { return clean(t).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase(); }
 
-function parsePrecioDesc(text) {
-  // Formatos típicos clasijazz: "3 € NS / 5 € S", "3€ No Soci@ / gratuito Soci@", "Entrada Libre",
-  // "10€ NS / 3€ S", "Entrada Libre"
-  const t = String(text || '');
-  if (/ENTRADA\\s+LIBRE|GRATUIT[OA]|GRATIS/i.test(t)) return { precio_min: 0, precio_max: 0, gratis: true, entradas: [] };
-  const matches = [...t.matchAll(/(\\d+(?:[.,]\\d{1,2})?)\\s*€/g)].map((m) => parseFloat(m[1].replace(',', '.'))).filter((n) => Number.isFinite(n));
-  const valid = matches.filter((n) => n > 0 && n < 1000);
-  if (!valid.length) return { precio_min: 0, precio_max: 0, gratis: false, entradas: [] };
-  const precio_min = Math.min(...valid);
-  const precio_max = Math.max(...valid);
-  return {
-    precio_min,
-    precio_max,
-    gratis: false,
-    entradas: valid.map((p) => ({ nombre: '', precio: p, aforo: 0 })),
-  };
+const MONTHS_FULL = {
+  ENERO: '01', FEBRERO: '02', MARZO: '03', ABRIL: '04', MAYO: '05', JUNIO: '06',
+  JULIO: '07', AGOSTO: '08', SEPTIEMBRE: '09', OCTUBRE: '10', NOVIEMBRE: '11', DICIEMBRE: '12',
+};
+
+function parseFechaLargaES(text, fallbackYear) {
+  const norm = normalizeUpper(text);
+  const m = norm.match(/(\\d{1,2})\\s+DE\\s+([A-Z]+)(?:\\s+DE\\s+(\\d{4}))?/);
+  if (!m) return '';
+  const mes = MONTHS_FULL[m[2]];
+  if (!mes) return '';
+  const anio = m[3] || fallbackYear || String(new Date().getUTCFullYear());
+  return anio + '-' + mes + '-' + String(m[1]).padStart(2, '0');
+}
+
+function parseHora(text) {
+  const norm = String(text || '').toUpperCase();
+  const m = norm.match(/(\\d{1,2}):(\\d{2})/);
+  if (!m) return '';
+  let h = parseInt(m[1], 10);
+  const mm = m[2];
+  if (/(\\d{1,2}):(\\d{2})\\s*PM/.test(norm) && h < 12) h += 12;
+  if (/(\\d{1,2}):(\\d{2})\\s*AM/.test(norm) && h === 12) h = 0;
+  return String(h).padStart(2, '0') + ':' + mm;
 }
 
 let titulo_detalle = '';
-let observacion = desc_listado;
-let venue_detalle = '';
-let categoria = '';
+let observacion = '';
 let bodyText = '';
+let precio_min = 0;
+let precio_max = 0;
+let precio_medio = 0;
+let entradas = [];
+let hora_inicio = '';
+let fecha_inicio = fecha_inicio_listado;
+const fallbackYear = fecha_inicio_listado ? fecha_inicio_listado.slice(0, 4) : '';
 
 if (html) {
   try {
     const $$ = cheerio.load(html);
-    titulo_detalle = clean($$('h1.tribe-events-single-event-title, h1').first().text());
-    venue_detalle = clean($$('.tribe-events-meta-group-venue .tribe-venue, .tribe-events-venue, dd.tribe-venue').first().text());
-    categoria = clean($$('.tribe-events-event-categories a, .tribe-events-meta-group-details .tribe-events-event-categories').first().text());
-    bodyText = clean($$('.tribe-events-single-event-description, .tribe-events-content, article.tribe-events-event').first().text());
-    if (!observacion && bodyText) observacion = bodyText.slice(0, 2000);
+    titulo_detalle = clean($$('h1').first().text() || $$('h2').first().text() || '');
+    bodyText = clean($$('body').text());
+
+    const descCandidates = [];
+    $$('section, .description, .event-description, .descripcion, .event-detail, p').each((_i, el) => {
+      const t = clean($$(el).text());
+      if (t.length > 80 && t.length < 2000) descCandidates.push(t);
+    });
+    observacion = descCandidates[0] || '';
+
+    const reEur = /(\\d+(?:[.,]\\d{1,2}))\\s*€/g;
+    const seen = new Set();
+    let m;
+    while ((m = reEur.exec(bodyText)) !== null) {
+      const val = parseFloat(m[1].replace(',', '.'));
+      if (Number.isFinite(val) && val > 0 && val < 1000 && !seen.has(val)) {
+        seen.add(val);
+        entradas.push({ nombre: '', precio: val, aforo: 0 });
+      }
+    }
+    if (entradas.length) {
+      const ps = entradas.map((e) => e.precio).sort((a, b) => a - b);
+      precio_min = ps[0];
+      precio_max = ps[ps.length - 1];
+      precio_medio = Math.round((ps.reduce((s, p) => s + p, 0) / ps.length) * 100) / 100;
+    }
+
+    const horaContextMatch = bodyText.match(/(?:PUERTAS|DOORS|HORA|COMIENZA|EMPIEZA|INICIO|CONCIERTO)[^\\d]{0,30}(\\d{1,2}:\\d{2})/i)
+      || bodyText.match(/(\\d{1,2}:\\d{2})\\s*(?:H|HORAS|HR)/i)
+      || bodyText.match(/(\\d{1,2}:\\d{2})/);
+    if (horaContextMatch) hora_inicio = parseHora(horaContextMatch[1] || horaContextMatch[0]);
+
+    const fechaDetalle = parseFechaLargaES(bodyText, fallbackYear);
+    if (fechaDetalle) fecha_inicio = fechaDetalle;
   } catch (err) {
-    console.log('Parsear Detalle CLASIJAZZ - error:', err.message);
+    console.log('Parsear Detalle CRASH - error:', err.message);
   }
 }
 
-const pricingSrc = bodyText || desc_listado;
-const pricing = parsePrecioDesc(pricingSrc);
+if (!fecha_inicio && fecha_letras) {
+  fecha_inicio = parseFechaLargaES(fecha_letras, fallbackYear);
+}
 
-const fecha_inicio = fecha_inicio_listado;
-const hora_inicio = hora_listado;
 const tipo_fecha = fecha_inicio ? 'simple' : 'texto_no_parseable';
 
 return {
   json: {
     event_id,
     slug,
+    // El h1 del detalle de crashmusic es el genérico de la web ("AGENDA CRASH MUSIC"),
+    // no el título del evento. Usamos siempre el del listado (extraído del h5).
     titulo: titulo_listado || titulo_detalle,
     titulo_original: titulo_listado || titulo_detalle,
     observacion,
-    datetime_text_original: datetime_text_listado || clean(fecha_inicio + ' ' + hora_inicio),
+    datetime_text_original: clean([fecha_letras, hora_inicio].filter(Boolean).join(' ')) || front.datetime_text || '',
     fecha_inicio,
     fecha_fin: fecha_inicio,
     hora_inicio,
     tipo_fecha,
     num_sesiones_estimadas: fecha_inicio ? 1 : null,
     tiene_multiples_sesiones: false,
-    precio_entradas: pricing.precio_min,
-    precio_medio_entradas: pricing.precio_min,
-    precio_max: pricing.precio_max,
+    precio_entradas: precio_min,
+    precio_medio_entradas: precio_medio,
+    precio_max,
     aforo_total: 0,
-    entradas: pricing.entradas,
-    local: venue_detalle || 'Clasijazz',
-    es_gratuito: !!pricing.gratis,
+    entradas,
+    local: venue_listado,
+    es_gratuito: precio_min === 0 && entradas.length === 0,
     cartel_url: cartel_listado,
     screenshot_url,
     ticketera_url: event_url_resp || front.event_url || '',
     event_url: event_url_resp || front.event_url || '',
     estado_listado: fp.estado_listado || '',
-    categoria,
+    ciudad,
+    h5_full,
+    fecha_letras,
   },
 };`,
     };
 
     @node({
-        id: 'clasi-consolidar-detalle',
+        id: 'crash-consolidar-detalle',
         name: 'Consolidar Detalle',
         type: 'n8n-nodes-base.code',
         version: 2,
@@ -725,37 +727,24 @@ return {
     ConsolidarDetalle = {
         mode: 'runOnceForEachItem',
         jsCode: `const j = $json || {};
-const front_payload = ($('Loop eventos').item.json.payload_json) || {};
-const es_cine = !!front_payload.es_cine;
-const PRECIO_MINIMO = 12;
 const entradas = Array.isArray(j.entradas) ? j.entradas : [];
-// Precio del PÚBLICO (no socio) para el umbral de 12€: en Clasijazz
-// '12€ NS / 6€ S' debe contar como 12€. Fix 2026-06-19.
-const precio = (j.precio_max ?? j.precio_entradas) || 0;
-
-// Aplica filtro post-detalle:
-//   - cine: aceptamos si precio>0 (cualquier importe)
-//   - resto: aceptamos si precio>=12
-// Lo no aceptado se marcará en raw_front (es_espectaculo=false) y NO entrará en raw_detalle.
-// Clasijazz: cine siempre acepta. Resto: filtro precio>=12€.
-let aceptar;
-if (es_cine) aceptar = true;
-else aceptar = precio >= PRECIO_MINIMO;
 
 const payload = {
-  fuente: 'clasijazz',
+  fuente: 'crash_music_almeria',
   ticketera: j.ticketera_url ? {
-    proveedor: 'clasijazz',
+    proveedor: 'crash_music',
     id_externo: j.slug || '',
     url: j.ticketera_url,
   } : null,
-  categoria: j.categoria || '',
-  es_cine,
+  ciudad: j.ciudad || '',
+  venue: j.local || '',
+  fecha_letras: j.fecha_letras || '',
+  h5_full: j.h5_full || '',
   estado_listado: j.estado_listado || '',
-  precio_min: j.precio_entradas ?? null,
-  precio_max: j.precio_max ?? null,
-  precio_medio: j.precio_medio_entradas ?? null,
-  aforo_total: j.aforo_total ?? null,
+  precio_min: j.precio_entradas || null,
+  precio_max: j.precio_max || null,
+  precio_medio: j.precio_medio_entradas || null,
+  aforo_total: j.aforo_total || null,
   entradas,
 };
 
@@ -780,79 +769,12 @@ return {
     screenshot_url: j.screenshot_url || '',
     ticketera_url: j.ticketera_url || '',
     payload_json: payload,
-    es_cine,
-    aceptar_espectaculo: aceptar,
   },
 };`,
     };
 
     @node({
-        id: 'clasi-if-aceptar',
-        name: 'Aceptar espectaculo',
-        type: 'n8n-nodes-base.if',
-        version: 2.2,
-        position: [1248, 96],
-    })
-    AceptarEspectaculo = {
-        conditions: {
-            options: {
-                caseSensitive: true,
-                leftValue: '',
-                typeValidation: 'strict',
-                version: 2,
-            },
-            conditions: [
-                {
-                    leftValue: '={{ $json.aceptar_espectaculo }}',
-                    rightValue: true,
-                    operator: {
-                        type: 'boolean',
-                        operation: 'true',
-                        singleValue: true,
-                    },
-                },
-            ],
-            combinator: 'and',
-        },
-        options: {},
-    };
-
-    @node({
-        id: 'clasi-marcar-no-espectaculo',
-        name: 'Marcar No Espectaculo en Front',
-        type: 'n8n-nodes-base.postgres',
-        version: 2.6,
-        position: [1408, 256],
-        credentials: { postgres: { id: 'zKHsX0gkTrNFTpm5', name: 'Postgres account' } },
-    })
-    MarcarNoEspectaculoEnFront = {
-        operation: 'executeQuery',
-        schema: {
-            __rl: true,
-            value: 'public',
-            mode: 'list',
-        },
-        table: {
-            __rl: true,
-            value: 'raw_front_eventos',
-            mode: 'list',
-        },
-        query: `UPDATE raw_front_eventos
-SET payload_json = jsonb_set(
-      COALESCE(payload_json, '{}'::jsonb),
-      '{es_espectaculo}',
-      'false'::jsonb
-    ),
-    last_seen = NOW()
-WHERE event_id = '{{ ($json.event_id || "").replace(/'/g, "''") }}'
-  AND source_storefront = 'clasijazz';`,
-        options: {
-            queryBatching: 'independently',
-        },
-    };
-
-    @node({
-        id: 'clasi-upsert-raw-detalle',
+        id: 'crash-upsert-raw-detalle',
         name: 'Upsert raw_detalle_eventos',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
@@ -879,7 +801,7 @@ WHERE event_id = '{{ ($json.event_id || "").replace(/'/g, "''") }}'
     cartel_url, screenshot_url, ticketera_url, payload_json
 )
 VALUES (
-    '{{ ($json.event_id || "").replace(/'/g, "''") }}',
+    '{{ $json.event_id }}',
     '{{ ($json.titulo || "").replace(/'/g, "''") }}',
     '{{ ($json.titulo_original || "").replace(/'/g, "''") }}',
     '{{ ($json.observacion || "").replace(/'/g, "''") }}',
@@ -924,7 +846,7 @@ DO UPDATE SET
     };
 
     @node({
-        id: 'clasi-leer-adjuntos-pendientes',
+        id: 'crash-leer-adjuntos-pendientes',
         name: 'Leer Adjuntos Pendientes',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
@@ -951,7 +873,7 @@ DO UPDATE SET
       COALESCE(EXTRACT(YEAR FROM d.fecha_inicio)::text, TO_CHAR(d.fecha_captura, 'YYYY')) AS anio
     FROM raw_detalle_eventos d
     LEFT JOIN raw_front_eventos f ON f.event_id = d.event_id
-    WHERE f.source_storefront = 'clasijazz'
+    WHERE f.source_storefront = 'crash_music_almeria'
       AND (COALESCE(d.cartel_url, '') <> '' OR COALESCE(d.screenshot_url, '') <> '')
       AND COALESCE(d.adjuntos_descargados, false) = false
 )
@@ -981,7 +903,7 @@ ORDER BY pending.fecha_captura NULLS LAST, pending.event_id, pending.tipo;`,
     };
 
     @node({
-        id: 'clasi-loop-adjuntos',
+        id: 'crash-loop-adjuntos',
         name: 'Loop Adjuntos',
         type: 'n8n-nodes-base.splitInBatches',
         version: 3,
@@ -993,7 +915,7 @@ ORDER BY pending.fecha_captura NULLS LAST, pending.event_id, pending.tipo;`,
     };
 
     @node({
-        id: 'clasi-filtrar-adjuntos',
+        id: 'crash-filtrar-adjuntos',
         name: 'Filtrar Adjuntos Validos',
         type: 'n8n-nodes-base.code',
         version: 2,
@@ -1006,7 +928,7 @@ ORDER BY pending.fecha_captura NULLS LAST, pending.event_id, pending.tipo;`,
     };
 
     @node({
-        id: 'clasi-preparar-adjunto',
+        id: 'crash-preparar-adjunto',
         name: 'Preparar Adjunto Dropbox',
         type: 'n8n-nodes-base.code',
         version: 2,
@@ -1034,7 +956,7 @@ function extractExtension(url, tipo) {
 const eventId = String($json.event_id || '').trim();
 const tipo = String($json.tipo || '').trim();
 const titulo = String($json.titulo || '').trim();
-const promotor = normalizeSegment($json.promotor, 'clasijazz');
+const promotor = normalizeSegment($json.promotor, 'crash-music-almeria');
 const anio = String($json.anio || '').trim() || 'sin-anio';
 const tituloSlug = normalizeSegment(titulo, 'evento');
 const eventSlug = eventId + '+' + tituloSlug;
@@ -1055,7 +977,7 @@ return {
     };
 
     @node({
-        id: 'clasi-descargar-adjunto',
+        id: 'crash-descargar-adjunto',
         name: 'Descargar Adjunto',
         type: 'n8n-nodes-base.httpRequest',
         version: 4.4,
@@ -1074,7 +996,7 @@ return {
     };
 
     @node({
-        id: 'clasi-guardar-dropbox',
+        id: 'crash-guardar-dropbox',
         name: 'Guardar en Dropbox',
         type: 'n8n-nodes-base.dropbox',
         version: 1,
@@ -1089,7 +1011,7 @@ return {
     };
 
     @node({
-        id: 'clasi-registrar-adjunto',
+        id: 'crash-registrar-adjunto',
         name: 'Registrar Adjunto',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
@@ -1129,7 +1051,7 @@ WHERE NOT EXISTS (
     };
 
     @node({
-        id: 'clasi-marcar-descargados',
+        id: 'crash-marcar-descargados',
         name: 'Marcar Adjuntos Descargados',
         type: 'n8n-nodes-base.postgres',
         version: 2.6,
@@ -1175,28 +1097,24 @@ WHERE d.event_id = '{{ (($('Preparar Adjunto Dropbox').item.json.event_id) || ""
         this.ScheduleTrigger.out(0).to(this.LoadPromoterConfig.in(0));
         this.ManualTrigger.out(0).to(this.LoadPromoterConfig.in(0));
         this.WebhookTrigger.out(0).to(this.LoadPromoterConfig.in(0));
-        this.LoadPromoterConfig.out(0).to(this.GenerarPaginas.in(0));
-        this.GenerarPaginas.out(0).to(this.ScrapeListado.in(0));
-        this.ScrapeListado.out(0).to(this.ParsearListadoClasijazz.in(0));
+        this.LoadPromoterConfig.out(0).to(this.ScrapeListado.in(0));
+        this.ScrapeListado.out(0).to(this.ParsearListadoCrash.in(0));
         this.ScrapeListado.out(1).to(this.FallbackListado.in(0));
-        this.FallbackListado.out(0).to(this.ParsearListadoClasijazz.in(0));
-        this.ParsearListadoClasijazz.out(0).to(this.Wait.in(0));
+        this.FallbackListado.out(0).to(this.ParsearListadoCrash.in(0));
+        this.ParsearListadoCrash.out(0).to(this.Wait.in(0));
         this.Wait.out(0).to(this.SplitOut.in(0));
         this.SplitOut.out(0).to(this.NormalizarTitulo.in(0));
         this.NormalizarTitulo.out(0).to(this.UpsertRawFrontEventos.in(0));
         this.UpsertRawFrontEventos.out(0).to(this.SelectFrontSinDetalle.in(0));
         this.SelectFrontSinDetalle.out(0).to(this.LoopEventos.in(0));
         this.LoopEventos.out(0).to(this.LeerAdjuntosPendientes.in(0));
-        this.LoopEventos.out(1).to(this.ScrapeDetalleClasijazz.in(0));
-        this.ScrapeDetalleClasijazz.out(0).to(this.ParsearDetalleClasijazz.in(0));
-        this.ScrapeDetalleClasijazz.out(1).to(this.FallbackDetalle.in(0));
-        this.FallbackDetalle.out(0).to(this.ParsearDetalleClasijazz.in(0));
-        this.ParsearDetalleClasijazz.out(0).to(this.ConsolidarDetalle.in(0));
-        this.ConsolidarDetalle.out(0).to(this.AceptarEspectaculo.in(0));
-        this.AceptarEspectaculo.out(0).to(this.UpsertRawDetalleEventos.in(0));
-        this.AceptarEspectaculo.out(1).to(this.MarcarNoEspectaculoEnFront.in(0));
+        this.LoopEventos.out(1).to(this.ScrapeDetalleCrash.in(0));
+        this.ScrapeDetalleCrash.out(0).to(this.ParsearDetalleCrash.in(0));
+        this.ScrapeDetalleCrash.out(1).to(this.FallbackDetalle.in(0));
+        this.FallbackDetalle.out(0).to(this.ParsearDetalleCrash.in(0));
+        this.ParsearDetalleCrash.out(0).to(this.ConsolidarDetalle.in(0));
+        this.ConsolidarDetalle.out(0).to(this.UpsertRawDetalleEventos.in(0));
         this.UpsertRawDetalleEventos.out(0).to(this.LoopEventos.in(0));
-        this.MarcarNoEspectaculoEnFront.out(0).to(this.LoopEventos.in(0));
         this.LeerAdjuntosPendientes.out(0).to(this.LoopAdjuntos.in(0));
         this.LoopAdjuntos.out(1).to(this.FiltrarAdjuntosValidos.in(0));
         this.FiltrarAdjuntosValidos.out(0).to(this.PrepararAdjuntoDropbox.in(0));
