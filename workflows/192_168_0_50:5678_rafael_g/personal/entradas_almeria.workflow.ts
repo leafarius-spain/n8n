@@ -2,7 +2,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
 // Workflow : SCRAPPER ENTRADAS COM ALMERIA
-// Nodes   : 25  |  Connections: 26
+// Nodes   : 26  |  Connections: 28
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
@@ -21,7 +21,8 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // UpsertRawFrontEventos              postgres                   [creds]
 // SelectFrontSinDetalle              postgres                   [creds]
 // LoopEventos                        splitInBatches
-// FetchDetalle                       firecrawl                  [onError→regular] [creds]
+// FetchDetalle                       firecrawl                  [onError→out(1)] [creds] [retry]
+// FallbackDetalle                    httpRequest                [onError→regular]
 // ParsearDetalle                     code
 // UpsertRawDetalleEventos            postgres                   [creds]
 // LeerAdjuntosPendientes             postgres                   [creds]
@@ -60,6 +61,8 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 //                            → ParsearDetalle
 //                              → UpsertRawDetalleEventos
 //                                → LoopEventos (↩ loop)
+//                           .out(1) → FallbackDetalle
+//                              → ParsearDetalle (↩ loop)
 // ManualTrigger
 //    → LoadPromoterConfig (↩ loop)
 // WebhookTrigger
@@ -73,10 +76,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 @workflow({
     id: 'f18YFbCMFf1J2WB5',
     name: 'SCRAPPER ENTRADAS COM ALMERIA',
-    // Desactivado 2026-07-11: era el canal de venta de KUVER, que ha desaparecido
-    // ([[kuver]] también desactivado). Estado real: inactivo en n8n (API) +
-    // habilitado=false en promotores_configuracion. n8nac ignora 'active'.
-    active: false,
+    active: true,
     isArchived: false,
     settings: {
         errorWorkflow: 'IkqnFDu34CjPjXBj',
@@ -454,7 +454,8 @@ ORDER BY f.id;`,
         version: 1,
         position: [192, 96],
         credentials: { firecrawlApi: { id: '3FsKPT3ZQeVfmMkM', name: 'Firecrawl account' } },
-        onError: 'continueRegularOutput',
+        onError: 'continueErrorOutput',
+        retryOnFail: true,
     })
     FetchDetalle = {
         operation: 'scrape',
@@ -475,6 +476,33 @@ ORDER BY f.id;`,
             },
         },
         requestOptions: {},
+    };
+
+    @node({
+        id: 'entradascom-fallback-detalle',
+        name: 'Fallback Detalle',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [192, 288],
+        onError: 'continueRegularOutput',
+    })
+    FallbackDetalle = {
+        method: 'POST',
+        url: 'http://172.18.0.1:8021/scrape',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'X-Api-Key',
+                    value: '={{ $env.SGF_API_KEY }}',
+                },
+            ],
+        },
+        sendBody: true,
+        specifyBody: 'json',
+        jsonBody:
+            '={{ JSON.stringify({ url: ($json.event_url || $(\'Loop eventos\').first().json.event_url), formats: ["html", "metadata"], wait_ms: 3000 }) }}',
+        options: {},
     };
 
     @node({
@@ -965,6 +993,8 @@ WHERE d.event_id = '{{ (($('Preparar Adjunto Dropbox').item.json.event_id) || ""
         this.LoopEventos.out(0).to(this.LeerAdjuntosPendientes.in(0));
         this.LoopEventos.out(1).to(this.FetchDetalle.in(0));
         this.FetchDetalle.out(0).to(this.ParsearDetalle.in(0));
+        this.FetchDetalle.out(1).to(this.FallbackDetalle.in(0));
+        this.FallbackDetalle.out(0).to(this.ParsearDetalle.in(0));
         this.ParsearDetalle.out(0).to(this.UpsertRawDetalleEventos.in(0));
         this.UpsertRawDetalleEventos.out(0).to(this.LoopEventos.in(0));
         this.LeerAdjuntosPendientes.out(0).to(this.LoopAdjuntos.in(0));
