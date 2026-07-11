@@ -2,21 +2,23 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
 // Workflow : COMPROBACION TAQUILLA
-// Nodes   : 11  |  Connections: 11
+// Nodes   : 13  |  Connections: 14
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
 // Property name                    Node type (short)         Flags
 // WhenClickingExecuteWorkflow        manualTrigger
 // ScheduleTrigger                    scheduleTrigger
+// WebhookTrigger                     webhook
 // AsegurarTablaChecksTaquilla        postgres                   [creds]
 // SeleccionarChecksTaquilla          postgres                   [creds]
 // LoopOverChecksTaquilla             splitInBatches
-// InspeccionarTicketera              firecrawl                  [creds] [retry]
+// InspeccionarTicketera              firecrawl                  [onError→out(1)] [creds] [retry]
+// FallbackInspeccion                 httpRequest                [onError→regular]
 // ClasificarEstadoTaquilla           code
 // PrepararEvidenciaDropbox           code
-// DescargarCapturaTaquilla           httpRequest
-// GuardarEvidenciaTaquillaDropbox    dropbox                    [creds]
+// DescargarCapturaTaquilla           httpRequest                [onError→regular]
+// GuardarEvidenciaTaquillaDropbox    dropbox                    [onError→regular] [creds]
 // RegistrarCheckTaquilla             postgres                   [creds]
 //
 // ROUTING MAP
@@ -32,7 +34,11 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 //                  → GuardarEvidenciaTaquillaDropbox
 //                    → RegistrarCheckTaquilla
 //                      → LoopOverChecksTaquilla (↩ loop)
+//           .out(1) → FallbackInspeccion
+//              → ClasificarEstadoTaquilla (↩ loop)
 // ScheduleTrigger
+//    → AsegurarTablaChecksTaquilla (↩ loop)
+// WebhookTrigger
 //    → AsegurarTablaChecksTaquilla (↩ loop)
 // </workflow-map>
 
@@ -44,6 +50,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
     id: 'eE0zwAWao7Axsdi9',
     name: 'COMPROBACION TAQUILLA',
     active: true,
+    isArchived: false,
     settings: {
         timezone: 'Europe/Madrid',
         executionOrder: 'v1',
@@ -87,6 +94,21 @@ export class ComprobacionTaquillaWorkflow {
     };
 
     @node({
+        id: 'taquilla-webhook-trigger',
+        webhookId: 'comprobacion-taquilla-trigger-2026',
+        name: 'Webhook Trigger',
+        type: 'n8n-nodes-base.webhook',
+        version: 2,
+        position: [-928, -464],
+    })
+    WebhookTrigger = {
+        httpMethod: 'POST',
+        path: 'comprobacion-taquilla-trigger-2026',
+        responseMode: 'lastNode',
+        options: {},
+    };
+
+    @node({
         id: 'taquilla-ensure-table',
         name: 'Asegurar Tabla Checks Taquilla',
         type: 'n8n-nodes-base.postgres',
@@ -96,6 +118,16 @@ export class ComprobacionTaquillaWorkflow {
     })
     AsegurarTablaChecksTaquilla = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_eventos_taquilla_checks',
+            mode: 'list',
+        },
         query: `CREATE TABLE IF NOT EXISTS raw_eventos_taquilla_checks (
   id BIGSERIAL PRIMARY KEY,
   event_id TEXT NOT NULL,
@@ -137,6 +169,16 @@ CREATE INDEX IF NOT EXISTS idx_raw_eventos_taquilla_checks_status
     })
     SeleccionarChecksTaquilla = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_eventos_taquilla_checks',
+            mode: 'list',
+        },
         query: `WITH event_history AS (
   SELECT
     t.event_id,
@@ -173,6 +215,12 @@ due_checks AS (
   WHERE COALESCE(d.ticketera_url, '') <> ''
     AND d.fecha_inicio IS NOT NULL
     AND (d.fecha_inicio - CURRENT_DATE) IN (15, 5, 3, 0, -1)
+    -- Excluir AGENDAS/agregadores culturales: no son ticketeras reales, así
+    -- que comprobar su "taquilla" no aporta. Las ticketeras de verdad
+    -- (eventbrite, tomaticket, etc.) SÍ se comprueban. 2026-06-17.
+    AND d.ticketera_url NOT ILIKE '%conciertos.club%'
+    AND d.ticketera_url NOT ILIKE '%turismodealmeria.org%'
+    AND d.ticketera_url NOT ILIKE '%fundacionunicaja.com%'
 )
 SELECT
   c.event_id,
@@ -226,6 +274,7 @@ LIMIT 20;`,
         version: 1,
         position: [-32, -704],
         credentials: { firecrawlApi: { id: '3FsKPT3ZQeVfmMkM', name: 'Firecrawl account' } },
+        onError: 'continueErrorOutput',
         retryOnFail: true,
         waitBetweenTries: 5000,
     })
@@ -255,6 +304,33 @@ LIMIT 20;`,
             },
         },
         requestOptions: {},
+    };
+
+    @node({
+        id: 'taquilla-fallback-inspection',
+        name: 'Fallback Inspeccion',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [-32, -480],
+        onError: 'continueRegularOutput',
+    })
+    FallbackInspeccion = {
+        method: 'POST',
+        url: 'http://172.18.0.1:8021/scrape',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'X-Api-Key',
+                    value: '={{ $env.SGF_API_KEY }}',
+                },
+            ],
+        },
+        sendBody: true,
+        specifyBody: 'json',
+        jsonBody:
+            '={{ JSON.stringify({ url: ($json.ticketera_url || $(\'Loop Over Checks Taquilla\').all()[$itemIndex].json.ticketera_url), formats: ["html"], wait_ms: 3000 }) }}',
+        options: {},
     };
 
     @node({
@@ -450,13 +526,13 @@ return results;`,
         position: [416, -704],
     })
     PrepararEvidenciaDropbox = {
-        jsCode: `const items = input.all();
+        jsCode: `const items = $input.all();
 if (!items || items.length === 0) return [];
 
 function normalizeSegment(value, fallback) {
   const cleaned = String(value || '')
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\\u0300-\\u036f]/g, '')
     .replace(/[^A-Za-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase();
@@ -464,13 +540,13 @@ function normalizeSegment(value, fallback) {
 }
 
 function extractExtension(value) {
-  const match = String(value || '').match(/.([A-Za-z0-9]{2,5})(?:[?#].*)?$/);
+  const match = String(value || '').match(/\\.([A-Za-z0-9]{2,5})(?:[?#].*)?$/);
   return match ? match[1].toLowerCase() : 'png';
 }
 
 function formatDisplayDate(value) {
   const normalized = String(value || '').slice(0, 10);
-  const match = normalized.match(/^(d{4})-(d{2})-(d{2})$/);
+  const match = normalized.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
   if (!match) return normalized || 'sin fecha';
   return match[3] + '/' + match[2] + '/' + match[1];
 }
@@ -529,6 +605,7 @@ return items.map((item) => {
         type: 'n8n-nodes-base.httpRequest',
         version: 4.4,
         position: [640, -704],
+        onError: 'continueRegularOutput',
     })
     DescargarCapturaTaquilla = {
         url: '={{ $json.screenshot_source_url }}',
@@ -548,6 +625,7 @@ return items.map((item) => {
         version: 1,
         position: [864, -704],
         credentials: { dropboxOAuth2Api: { id: 'mp4rjzvmnH1bwU8C', name: 'Dropbox account' } },
+        onError: 'continueRegularOutput',
     })
     GuardarEvidenciaTaquillaDropbox = {
         authentication: 'oAuth2',
@@ -565,6 +643,16 @@ return items.map((item) => {
     })
     RegistrarCheckTaquilla = {
         operation: 'executeQuery',
+        schema: {
+            __rl: true,
+            value: 'public',
+            mode: 'list',
+        },
+        table: {
+            __rl: true,
+            value: 'raw_eventos_taquilla_checks',
+            mode: 'list',
+        },
         query: `INSERT INTO raw_eventos_taquilla_checks (
   event_id,
   checkpoint_dias,
@@ -589,14 +677,14 @@ VALUES (
   CAST(NULLIF('{{ $('Preparar Evidencia Dropbox').item.json.checkpoint_fecha_objetivo || '' }}', '') AS DATE),
   COALESCE(CAST(NULLIF('{{ $('Preparar Evidencia Dropbox').item.json.checked_at || '' }}', '') AS timestamptz), NOW()),
   '{{ (($('Preparar Evidencia Dropbox').item.json.status) || 'otro').replace(/'/g, "''") }}',
-  '{{ (($('Preparar Evidencia Dropbox').item.json.status_motivo) || '').replace(/'/g, "''") }}',
+  '{{ (($('Preparar Evidencia Dropbox').item.json.status_motivo) || '').replace(/'/g, "''").split('$').join('') }}',
   '{{ (($('Preparar Evidencia Dropbox').item.json.ticketera_url) || '').replace(/'/g, "''") }}',
   {{ $('Preparar Evidencia Dropbox').item.json.http_status ?? 'NULL' }},
-  '{{ (($('Preparar Evidencia Dropbox').item.json.texto_detectado) || '').replace(/'/g, "''") }}',
+  '{{ (($('Preparar Evidencia Dropbox').item.json.texto_detectado) || '').replace(/'/g, "''").split('$').join('') }}',
   '{{ (($('Preparar Evidencia Dropbox').item.json.screenshot_source_url) || '').replace(/'/g, "''") }}',
   '{{ (($('Preparar Evidencia Dropbox').item.json.dropbox_path) || '').replace(/'/g, "''") }}',
-  '{{ (($('Preparar Evidencia Dropbox').item.json.evento_lectura) || '').replace(/'/g, "''") }}',
-  '{{ JSON.stringify($('Preparar Evidencia Dropbox').item.json.payload_json || {}).replace(/'/g, "''") }}'::jsonb,
+  '{{ (($('Preparar Evidencia Dropbox').item.json.evento_lectura) || '').replace(/'/g, "''").split('$').join('') }}',
+  '{{ JSON.stringify($('Preparar Evidencia Dropbox').item.json.payload_json || {}).replace(/'/g, "''").split('$').join('') }}'::jsonb,
   NOW()
 )
 ON CONFLICT (event_id, checkpoint_dias, checkpoint_fecha_objetivo)
@@ -625,10 +713,13 @@ DO UPDATE SET
     defineRouting() {
         this.WhenClickingExecuteWorkflow.out(0).to(this.AsegurarTablaChecksTaquilla.in(0));
         this.ScheduleTrigger.out(0).to(this.AsegurarTablaChecksTaquilla.in(0));
+        this.WebhookTrigger.out(0).to(this.AsegurarTablaChecksTaquilla.in(0));
         this.AsegurarTablaChecksTaquilla.out(0).to(this.SeleccionarChecksTaquilla.in(0));
         this.SeleccionarChecksTaquilla.out(0).to(this.LoopOverChecksTaquilla.in(0));
         this.LoopOverChecksTaquilla.out(1).to(this.InspeccionarTicketera.in(0));
         this.InspeccionarTicketera.out(0).to(this.ClasificarEstadoTaquilla.in(0));
+        this.InspeccionarTicketera.out(1).to(this.FallbackInspeccion.in(0));
+        this.FallbackInspeccion.out(0).to(this.ClasificarEstadoTaquilla.in(0));
         this.ClasificarEstadoTaquilla.out(0).to(this.PrepararEvidenciaDropbox.in(0));
         this.PrepararEvidenciaDropbox.out(0).to(this.DescargarCapturaTaquilla.in(0));
         this.DescargarCapturaTaquilla.out(0).to(this.GuardarEvidenciaTaquillaDropbox.in(0));
