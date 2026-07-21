@@ -30,8 +30,9 @@ WITH mapa AS (
            END AS fuente,
            -- cadencia declarada; el cron real de casi todos es diario 1-6.
            -- El suelo de 3 dias cubre el domingo sin ejecucion.
-           CASE c.promotor_id
-               WHEN 'filarmonica_almeria' THEN 200   -- cron semestral: 30 23 1 1,7 *
+           CASE
+               WHEN c.promotor_id = 'filarmonica_almeria' THEN 200  -- cron semestral: 30 23 1 1,7 *
+               WHEN c.fuente_tipo = 'instagram'           THEN 5    -- cron L,J: de jueves a lunes hay 4 dias
                ELSE 3
            END AS umbral_dias
     FROM promotores_configuracion c
