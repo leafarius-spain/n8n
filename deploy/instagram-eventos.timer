@@ -1,0 +1,9 @@
+[Unit]
+Description=Pasada semanal de Instagram (lunes 22:00)
+
+[Timer]
+OnCalendar=Mon *-*-* 22:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Instagram -> eventos (imginn + OCR local + LLM local) para Cancerbero
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=rafa
+WorkingDirectory=/srv/dev/sgae/n8n/scripts
+Environment=MODO=seguimiento
+ExecStart=/usr/bin/python3 /srv/dev/sgae/n8n/scripts/instagram_eventos.py
+# el OCR y el LLM son locales y lentos; margen de sobra sin quedarse colgado
+TimeoutStartSec=10800
+StandardOutput=append:/srv/dev/sgae/n8n/scripts/instagram_eventos.log
+StandardError=append:/srv/dev/sgae/n8n/scripts/instagram_eventos.log
+
+[Install]
+WantedBy=multi-user.target
