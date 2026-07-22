@@ -436,8 +436,26 @@ for (let index = 0; index < items.length; index++) {
   const httpStatus = Number(httpStatusRaw);
   const hasHttpStatus = Number.isFinite(httpStatus);
 
-  const cancelHit = firstMatch(normalizedText, cancelPatterns);
-  const soldOutHit = firstMatch(normalizedText, soldOutPatterns);
+  // Acotar cancelado/agotado a la TARJETA del evento (no a toda la página): del
+  // título del evento hasta su botón de compra ("BUY NOW"). Evita el falso positivo
+  // cuando OTRO evento del mismo storefront lleva 'CANCELADO' en su título (p.ej.
+  // 'TOMATITO SEXTETO - CANCELADO-' marcaba como cancelado a Al Di Meola, que seguía
+  // con Buy Now). Usa indexOf (no depende de \\s) y la MISMA normalización que el título.
+  const tituloNorm = normalizeText(selected.titulo || '');
+  let scopeText = normalizedText;
+  if (tituloNorm) {
+    const iTit = normalizedText.indexOf(tituloNorm);
+    if (iTit >= 0) {
+      const desde = normalizedText.slice(iTit + tituloNorm.length);
+      const iBuy = desde.indexOf('BUY NOW');
+      scopeText = tituloNorm + ' ' + (iBuy >= 0 ? desde.slice(0, iBuy + 8) : desde.slice(0, 220));
+    } else {
+      scopeText = '';
+    }
+  }
+
+  const cancelHit = firstMatch(scopeText, cancelPatterns);
+  const soldOutHit = firstMatch(scopeText, soldOutPatterns);
   const celebradoHit = firstMatch(normalizedText, celebradoPatterns);
   const despublicadoHit = firstMatch(normalizedText, despublicadoPatterns);
   const htmlLength = collapseWhitespace(html).length;
