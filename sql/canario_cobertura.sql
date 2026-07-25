@@ -37,6 +37,7 @@ WITH mapa AS (
            END AS umbral_dias
     FROM promotores_configuracion c
     WHERE c.habilitado = true
+      AND c.vigila_captura = true   -- las nacionales (wegow) se vigilan por ejecucion, no por captura
 )
 SELECT m.fuente,
        max(r.last_seen)::date                        AS ultima_lectura,
