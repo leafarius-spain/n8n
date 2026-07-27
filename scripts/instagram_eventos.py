@@ -18,7 +18,8 @@ SCRATCH = os.path.dirname(os.path.abspath(__file__))
 MODO = os.environ.get('MODO', 'backfill')      # backfill | seguimiento
 # En seguimiento no se pagina: la primera tanda de imginn son 12 posts y ademas
 # es la unica que trae caption. Con pasada semanal cubre de sobra lo publicado.
-CLICS = 0 if MODO == 'seguimiento' else 8
+CLICS = 0 if MODO == 'seguimiento' else int(os.environ.get('CLICS', '8'))
+ESPERA_CLIC = int(os.environ.get('ESPERA_CLIC', '2500'))
 DESDE = os.environ.get('DESDE', '2026-01-01')
 LIMITE_DIAS = 21 if MODO == 'seguimiento' else 205
 CHEERIO = '/srv/dev/sgae/n8n/node_modules/cheerio'
@@ -72,7 +73,7 @@ def scrape_perfil(url, cache, clics=None):
     acciones = []
     for _ in range(clics):
         acciones += [{"type": "click", "selector": "button.load-more"},
-                     {"type": "wait", "milliseconds": 2500}]
+                     {"type": "wait", "milliseconds": ESPERA_CLIC}]
     body = {"url": url, "formats": ["html"], "proxy": "stealth",
             "waitFor": 5000, "timeout": 180000}
     if acciones:
@@ -178,12 +179,9 @@ def main():
         hechas = {l.strip() for l in open(os.path.join(SCRATCH, 'cuentas_completadas.txt')) if l.strip()}
         print(f"se saltan {len(hechas)} cuentas ya completadas\n", flush=True)
 
-    solo = os.environ.get('SOLO', '')          # para probar una cuenta suelta
     for c in cuentas:
         pid = c['promotor_id']
         if pid in hechas:
-            continue
-        if solo and pid != solo:
             continue
         print(f"=== {pid} ({c['promotor_nombre']})", flush=True)
         cache = os.path.join(SCRATCH, f"bf_{pid}.html")
