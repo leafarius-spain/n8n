@@ -47,10 +47,32 @@ bloqueo de cabeza de cola de manual.
 la cola, queda constancia de qué pasó, y se distinguen de los bajados de verdad
 por tener `url_dropbox` a nulo.
 
+## Corrección: las imágenes SÍ estaban en el Dropbox
+
+Di 1.513 por irrecuperables y me equivoqué. Lo corrigió el operador —*"las
+tenemos en teoría guardadas en el Dropbox"*— y así era: **1.425 de esas 1.513
+estaban descargadas**. Lo que fallaba era el índice, no la descarga.
+
+Mi comprobación buscó las carpetas con el título dentro
+(`…-20260822+cooltural-fest`) y las reales no siempre lo llevan
+(`…-20260822`), así que dio falsos negativos. Al cruzar hay que quedarse con lo
+que va **antes del `+`**.
+
+Otros dos detalles que dan falsos negativos al buscar:
+
+- La extensión se saca de la URL y no siempre acierta: hay ficheros `cartel.es`
+  —cogió el TLD de `juntadeandalucia.es`— y también `.avif` y `.heic`. Hay que
+  comparar el nombre **sin extensión** (`cartel`, `screenshot`).
+- El mount de rclone es lento: 5.700 comprobaciones una a una tardan minutos.
+  Mejor un `find` de una pasada y cruzar en memoria.
+
+Tras reindexar: **5.773 adjuntos con su imagen localizada** y solo 111 sin
+fichero en ninguna parte.
+
 ## Lo que queda pendiente
 
-- **Las 1.513 imágenes de Instagram no están perdidas**: el post sigue ahí. Se
-  recuperarían re-scrapeando esos eventos para obtener URLs nuevas.
+- **Los 111 sin imagen**: URL caducada y nada en el Dropbox. El post de
+  Instagram sigue ahí, así que se recuperarían re-scrapeando esos eventos.
 - **La causa de fondo**: entre que se captura la URL y se descarga pueden pasar
   días, y las firmas de Instagram duran ~1 semana. Lo sano sería descargar en el
   momento de capturar, o priorizar por caducidad (`oe=`) en vez de por antigüedad.
