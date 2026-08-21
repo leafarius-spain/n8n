@@ -2,7 +2,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
 // Workflow : SCRAPPER FLOWTE
-// Nodes   : 24  |  Connections: 27
+// Nodes   : 24  |  Connections: 28
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
@@ -14,14 +14,14 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // WebhookTrigger                     webhook
 // LoadPromoterConfig                 postgres                   [creds]
 // FallbackDetalle                    httpRequest                [onError→regular]
-// NormalizarEventos                  code
-// InsertNormalizedEvents             postgres                   [creds]
+// NormalizarEventos                  code                       [alwaysOutput]
+// InsertNormalizedEvents             postgres                   [onError→regular] [creds]
 // Scrape                             firecrawl                  [onError→out(1)] [creds] [retry]
 // LeerAdjuntosPendientes             postgres                   [creds]
 // LoopOverPendingAdjuntos            splitInBatches
 // FiltrarAdjuntosValidos             code
 // PrepararAdjuntoDropbox             code
-// DescargarAdjunto                   httpRequest
+// DescargarAdjunto                   httpRequest                [onError→out(1)] [retry]
 // GuardarAdjuntoEnDropbox            dropbox                    [creds]
 // RegistrarAdjunto                   postgres                   [creds]
 // MarcarAdjuntosDescargados          postgres                   [creds]
@@ -53,6 +53,7 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 //                                  → RegistrarAdjunto
 //                                    → MarcarAdjuntosDescargados
 //                                      → LoopOverPendingAdjuntos (↩ loop)
+//                               .out(1) → LoopOverPendingAdjuntos (↩ loop)
 //                     .out(1) → Scrape
 //                        → NormalizarEventos
 //                          → InsertNormalizedEvents
@@ -73,7 +74,6 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
     id: '2qYQ1PxmsJhWhT1q',
     name: 'SCRAPPER FLOWTE',
     active: true,
-    isArchived: false,
     tags: ['SCRAPPER'],
     settings: {
         executionOrder: 'v1',
@@ -245,6 +245,7 @@ WHERE promotor_id = 'ayto_alm_cul';`,
         type: 'n8n-nodes-base.code',
         version: 2,
         position: [1168, -432],
+        alwaysOutputData: true,
     })
     NormalizarEventos = {
         jsCode: `const cheerio = require('cheerio');
@@ -436,7 +437,12 @@ for (let i = 0; i < items.length; i++) {
     const parsedDateTime = parseDateTimeText(dateTimeRaw);
     // Flowte sirve dos versiones: <id>-<ts>-resize.<ext> (preview) y <id>-<ts>.<ext> (completa).
     // Quitamos "-resize" para guardar y descargar la imagen completa en Dropbox.
-    const cartelUrlRaw = $('img#select-event-img').first().attr('src') || '';
+    let cartelUrlRaw = $('img#select-event-img').first().attr('src') || '';
+    // La web a veces da el src RELATIVO (/cabinet/event/img/...). El nodo de
+    // descarga necesita URL absoluta, asi que se antepone el dominio de Flowte.
+    if (cartelUrlRaw && cartelUrlRaw.startsWith('/')) {
+      cartelUrlRaw = 'https://www.flowte.me' + cartelUrlRaw;
+    }
     const cartelUrl = cartelUrlRaw.replace(/-resize(\\.[A-Za-z0-9]{2,5})(\\?|$)/, '$1$2');
     const descHtml = $('#select-event-desc').html() || '';
     const es_gratuito = /ENTRADA GRATUITA/i.test(descHtml);
@@ -491,6 +497,7 @@ return result;`,
         version: 2.6,
         position: [1376, -432],
         credentials: { postgres: { id: 'zKHsX0gkTrNFTpm5', name: 'Postgres account' } },
+        onError: 'continueRegularOutput',
     })
     InsertNormalizedEvents = {
         operation: 'executeQuery',
@@ -700,8 +707,7 @@ DO UPDATE SET
         AND a.tipo = 'screenshot'
       )
   ) pending
-  ORDER BY pending.fecha_captura NULLS LAST, pending.event_id, pending.tipo
-  LIMIT 20;`,
+  ORDER BY pending.fecha_captura NULLS LAST, pending.event_id, pending.tipo;`,
         options: {},
     };
 
@@ -786,6 +792,10 @@ DO UPDATE SET
         type: 'n8n-nodes-base.httpRequest',
         version: 4.4,
         position: [1856, -816],
+        onError: 'continueErrorOutput',
+        retryOnFail: true,
+        maxTries: 3,
+        waitBetweenTries: 5000,
     })
     DescargarAdjunto = {
         url: '={{ $json.url_origen }}',
@@ -1173,6 +1183,7 @@ return {
         this.FiltrarAdjuntosValidos.out(0).to(this.PrepararAdjuntoDropbox.in(0));
         this.PrepararAdjuntoDropbox.out(0).to(this.DescargarAdjunto.in(0));
         this.DescargarAdjunto.out(0).to(this.GuardarAdjuntoEnDropbox.in(0));
+        this.DescargarAdjunto.out(1).to(this.LoopOverPendingAdjuntos.in(0));
         this.GuardarAdjuntoEnDropbox.out(0).to(this.RegistrarAdjunto.in(0));
         this.RegistrarAdjunto.out(0).to(this.MarcarAdjuntosDescargados.in(0));
         this.MarcarAdjuntosDescargados.out(0).to(this.LoopOverPendingAdjuntos.in(0));
