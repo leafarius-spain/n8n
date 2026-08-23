@@ -32,7 +32,7 @@ WITH mapa AS (
            -- El suelo de 3 dias cubre el domingo sin ejecucion.
            CASE
                WHEN c.promotor_id = 'filarmonica_almeria' THEN 200  -- cron semestral: 30 23 1 1,7 *
-               WHEN c.fuente_tipo = 'instagram'           THEN 5    -- cron L,J: de jueves a lunes hay 4 dias
+               WHEN c.fuente_tipo = 'instagram'           THEN 9    -- cron semanal (lunes) desde 08/2026: 7 dias entre pasadas + margen
                ELSE 3
            END AS umbral_dias
     FROM promotores_configuracion c
@@ -40,7 +40,7 @@ WITH mapa AS (
       AND c.vigila_captura = true   -- las nacionales (wegow) se vigilan por ejecucion, no por captura
 )
 SELECT m.fuente,
-       max(r.last_seen)::date                        AS ultima_lectura,
+       to_char(max(r.last_seen), 'YYYY-MM-DD')       AS ultima_lectura,
        (now()::date - max(r.last_seen)::date)        AS dias_en_silencio,
        m.umbral_dias,
        count(*)                                      AS eventos_en_tabla
