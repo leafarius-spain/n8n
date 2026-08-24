@@ -39,9 +39,13 @@ DB = dict(host=env(N8NENV, 'DB_HOST') or '192.168.0.50',
 
 PROMPT = """Analiza este cartel de un ayuntamiento y devuelve JSON:
 {"es_evento":true|false,"motivo":"...","eventos":[{"titulo":"...","fecha":"AAAA-MM-DD","hora":"HH:MM","lugar":"...","tipo":"MUSICA|TEATRO|CINE|DEPORTE|RELIGIOSO|OTRO"}]}
-es_evento=false SOLO para: avisos meteorologicos, bandos, luto oficial, campañas de salud o concienciacion, felicitaciones y logos institucionales sin acto convocado.
-es_evento=true para cualquier acto publico convocado con fecha (fiestas, romerias, conciertos, teatro, deporte, concursos, rutas, talleres).
-Si es un PROGRAMA con varios actos, devuelve TODOS. El OCR trae erratas (ceros por O, palabras pegadas). Año 2026."""
+es_evento=false para: avisos meteorologicos, bandos, avisos de trafico y obras, plazos y tramites administrativos, luto oficial, campañas de salud o concienciacion, felicitaciones, logos institucionales, y CRONICAS de algo que YA ocurrio ("el pasado viernes vivimos...", "hemos presentado...").
+es_evento=true para cualquier acto publico convocado que aun no ha ocurrido (fiestas, romerias, conciertos, teatro, deporte, concursos, rutas, talleres).
+FECHAS - regla estricta:
+  · Esta publicacion se subio el {FECHA_PUB} ({DIA_SEMANA}). Resuelve contra ESA fecha las referencias relativas: "este viernes", "manana", "el proximo martes", "hoy".
+  · Si el cartel da dia y mes sin año, usa el año que corresponda contando desde {FECHA_PUB} hacia adelante.
+  · Si NO puedes determinar la fecha, pon "fecha":null. NUNCA la inventes ni uses la de hoy: un evento sin fecha se revisa a mano, uno con fecha falsa se cuela.
+Si es un PROGRAMA con varios actos, devuelve TODOS. El OCR trae erratas (ceros por O, palabras pegadas)."""
 
 
 # ---------------------------------------------------------------- utilidades
@@ -113,8 +117,54 @@ def ocr(path):
     return str(d.get('OCR_RAW') or ''), float(d.get('OCR_SCORE') or 0)
 
 
-def extraer_eventos(texto):
-    body = {"model": "qwen2.5:7b", "prompt": PROMPT + "\n\nCARTEL:\n" + texto[:1600],
+_DIAS = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]
+
+
+_REL_DIAS = {"lunes": 0, "martes": 1, "miercoles": 2, "miércoles": 2, "jueves": 3,
+             "viernes": 4, "sabado": 5, "sábado": 5, "domingo": 6}
+
+
+def resolver_fecha_relativa(texto, fecha_pub):
+    """Resuelve "este viernes", "manana", "hoy" contra la fecha del post.
+
+    En codigo y no en el prompt: un modelo de 7B no hace aritmetica de
+    calendario de fiar. Antes rellenaba con la fecha de la captura y salian
+    eventos de julio fechados en octubre.
+
+    Devuelve None si el texto no trae ninguna referencia relativa clara: sin
+    fecha se revisa a mano, que es preferible a una fecha inventada.
+    """
+    if not fecha_pub or not texto:
+        return None
+    t = texto.lower()
+    if re.search(r'\bhoy\b', t):
+        return fecha_pub
+    if re.search(r'\bma[nñ]ana\b', t):
+        return fecha_pub + datetime.timedelta(days=1)
+    m = re.search(r'\b(?:este|el)\s+(?:pr[oó]ximo\s+)?(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b', t)
+    if not m:
+        m = re.search(r'\bpr[oó]ximo\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b', t)
+    if not m:
+        return None
+    objetivo = _REL_DIAS[m.group(1)]
+    delta = (objetivo - fecha_pub.weekday()) % 7
+    # "este viernes" publicado en viernes = hoy mismo; publicado despues = el que viene
+    return fecha_pub + datetime.timedelta(days=delta)
+
+
+def extraer_eventos(texto, fecha_pub=None):
+    """`fecha_pub` ancla las referencias relativas del cartel ("este viernes").
+    imginn da la antiguedad del post ("2 days"), no la fecha: se reconstruye
+    restandola de hoy. Sin ese ancla el modelo rellenaba con la fecha de la
+    captura y salian eventos en octubre que eran de julio."""
+    if fecha_pub:
+        cabecera = (PROMPT.replace("{FECHA_PUB}", fecha_pub.isoformat())
+                          .replace("{DIA_SEMANA}", _DIAS[fecha_pub.weekday()]))
+    else:
+        # sin ancla, mejor que no de fechas relativas que darlas mal
+        cabecera = (PROMPT.replace("{FECHA_PUB}", "FECHA DESCONOCIDA")
+                          .replace("{DIA_SEMANA}", "dia desconocido"))
+    body = {"model": "qwen2.5:7b", "prompt": cabecera + "\n\nCARTEL:\n" + texto[:1600],
             "stream": False, "format": "json",
             "options": {"temperature": 0, "num_predict": 900}}
     req = urllib.request.Request("http://localhost:11434/api/generate",
@@ -213,14 +263,20 @@ def main():
             texto, score = ocr(jpg)
             caption = p['alt'] or ''
             base = (caption + "\n" + texto).strip() if caption else texto
-            j = extraer_eventos(base) if base else None
+            dd = dias_desde(p['time'])
+            fecha_pub = (datetime.date.today() - datetime.timedelta(days=dd)) if dd is not None else None
+            j = extraer_eventos(base, fecha_pub) if base else None
             os.remove(jpg)
 
             payload_post = {'fuente': pid, 'red_social': 'instagram',
                             'shortcode': p['shortcode'], 'post_url': p['post_url'],
                             'img_url': img_url, 'caption': caption[:2000],
                             'ocr_score': score, 'repertorio_ocr': texto[:4000],
-                            'municipio_norm': (c['localidad_default'] or '').lower()}
+                            'municipio_norm': (c['localidad_default'] or '').lower(),
+                            # queda registrada para poder revisar despues si una
+                            # fecha se resolvio bien o el modelo se la invento
+                            'fecha_publicacion': fecha_pub.isoformat() if fecha_pub else None,
+                            'antiguedad_post': p['time']}
 
             if not j or not j.get('es_evento') or not (j.get('eventos') or []):
                 # se guarda igual, marcado, por si cambia el criterio
@@ -235,7 +291,13 @@ def main():
             for ev in j['eventos']:
                 fecha = str(ev.get('fecha') or '')[:10]
                 if not re.match(r'^\d{4}-\d{2}-\d{2}$', fecha):
-                    continue
+                    # el modelo no supo darla: si el texto dice "este viernes"
+                    # la calculamos nosotros contra la fecha del post
+                    rel = resolver_fecha_relativa(base, fecha_pub)
+                    if not rel:
+                        continue
+                    fecha = rel.isoformat()
+                    print(f"      fecha relativa resuelta -> {fecha}", flush=True)
                 try:                      # el LLM inventa fechas tipo 2026-16-10
                     datetime.date.fromisoformat(fecha)
                 except ValueError:
@@ -247,7 +309,9 @@ def main():
                 titulo = norm_titulo(ev.get('titulo'))
                 if not titulo:
                     continue
-                hora = str(ev.get('hora') or '')[:5]
+                hora = str(ev.get('hora') or '')
+                mh = re.search(r'([0-2]?\d[:.][0-5]\d)', hora)   # a veces cuela un ISO entero
+                hora = mh.group(1).replace('.', ':')[:5] if mh else ''
                 lugar = str(ev.get('lugar') or c['localidad_default'] or '')[:200]
                 pj = dict(payload_post)
                 pj.update({'es_espectaculo': True, 'tipo_evento': ev.get('tipo') or 'OTRO',
