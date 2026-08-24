@@ -40,14 +40,22 @@ Hay que reapuntar también a quien llamaba al nodo de Firecrawl.
 |---|---|---|
 | SCRAPPER CLASIJAZZ | migrado | ejecución 49589 correcta · Firecrawl no se ejecutó |
 | SCRAPPER CRASH MUSIC ALMERIA | migrado | ejecución 49596 correcta · 27 eventos · Firecrawl no se ejecutó |
+| SCRAPPER WEGOW ALMERIA | fuera de Firecrawl | 24/08/2026 · pasa a la **API pública** de Wegow, sin render: ni local ni Firecrawl. Ver `wegow_api_publica.md` |
 
-Los backups de ambos workflows, antes del cambio, quedaron en el scratchpad de la
-sesión (`clasijazz.BACKUP.json`, `crash.BACKUP.json`).
+Los backups de los dos primeros, antes del cambio, quedaron en el scratchpad de la
+sesión (`clasijazz.BACKUP.json`, `crash.BACKUP.json`). A partir de Wegow, los scripts
+de `scripts/` guardan el backup solos en `backups/`.
+
+> **Antes de migrar, mirar si la fuente tiene API.** Wegow salió del render entero
+> porque la tenía y era pública. Sale más barato y más fiable que cualquier scraper:
+> nada de HTML, filtros que funcionan de verdad y `count` exacto.
 
 ## Pendiente
 
-- Dejar una semana estos dos y mirar que no aparezcan errores.
-- Si van bien, migrar los 11 activos restantes.
+- 23/08/2026: los dos primeros llevan **16 días** sin tocar Firecrawl ni una vez, con
+  6 de 6 ejecuciones limpias cada uno. El patrón está validado.
+- Migrar los 5 restantes que están sanos y tienen fallback: Flowte, Siente la Plaza,
+  Emma, Feverup y La Voz.
 - **Dos webs que el scraper local habrá que probar aparte**: `almeriaciudad.es`
   (certificado SSL que Obscura rechazaba; comprobar si Playwright lo acepta) y
   `entradas.com` (devolvió vacío, es un sitemap).

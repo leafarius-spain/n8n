@@ -70,11 +70,11 @@ Firecrawl (23/08/2026):
 - **CLASIJAZZ y CRASH MUSIC son inmunes por accidente**: como ya se migraron a
   «local primero» (ver `scrapers_orden_firecrawl.md`), su nodo primario es un
   `httpRequest`, que **sí** falla de verdad ante un error HTTP.
-- **WEGOW lleva desde el 29/06/2026 sin capturar nada** — 54 días. Devuelve 200 y
-  105 KB de HTML, y el parser saca 0. No es este bug, es el parser o el filtro de
-  zona (la query pide Almería **y Roquetas**, que no es C15). Está sin vigilar porque
-  tiene `vigila_captura = false` en `promotores_configuracion`, dado por bueno como
-  «captura 0 legítimamente». **Pendiente de revisar.**
+- ~~**WEGOW lleva desde el 29/06/2026 sin capturar nada** — 54 días.~~ **Revisado el
+  24/08/2026**: el cero era legítimo (Wegow no tiene nada en la provincia de Almería),
+  pero la URL estaba obsoleta y traía 24 conciertos del mundo que solo se salvaban
+  porque el filtro C15 del parser los tiraba. Migrado a la API pública, que sí filtra.
+  Ver `wegow_api_publica.md`.
 - `IG PERFILES (imginn)` **no tiene fallback** al 8021 y su nodo va sin rama de error.
 - `My workflow copy.workflow.ts` es un fichero huérfano: ese workflow ya no existe en
   n8n (la API devuelve 404).
