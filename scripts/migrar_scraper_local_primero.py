@@ -20,6 +20,12 @@ BACKUP_DIR = os.path.join(os.path.dirname(__file__), '..', 'backups')
 
 FIRECRAWL_TYPE = '@mendable/n8n-nodes-firecrawl.firecrawl'
 LOCAL_MARK = '8021/scrape'
+# La API pública rechaza el PUT si 'settings' trae propiedades que n8n añade solo
+# (callerPolicy, availableInMCP, binaryMode, timeSavedMode -> 400 Bad Request); n8n
+# hace merge al guardar, así que no hace falta reenviarlas. Ver docs/scrapers_fallo_silencioso_html_de_error.md
+SETTINGS_OK = {'saveExecutionProgress', 'saveManualExecutions', 'saveDataErrorExecution',
+               'saveDataSuccessExecution', 'executionTimeout', 'errorWorkflow',
+               'timezone', 'executionOrder'}
 
 
 def api(path, method='GET', payload=None):
@@ -107,7 +113,8 @@ def main():
 
     api(f'workflows/{wid}', 'PUT', {
         'name': wf['name'], 'nodes': wf['nodes'],
-        'connections': wf['connections'], 'settings': wf.get('settings', {}),
+        'connections': wf['connections'],
+        'settings': {k: v for k, v in wf.get('settings', {}).items() if k in SETTINGS_OK},
     })
     print('   APLICADO')
     return 0

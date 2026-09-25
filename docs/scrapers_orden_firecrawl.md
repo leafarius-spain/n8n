@@ -41,10 +41,40 @@ Hay que reapuntar también a quien llamaba al nodo de Firecrawl.
 | SCRAPPER CLASIJAZZ | migrado | ejecución 49589 correcta · Firecrawl no se ejecutó |
 | SCRAPPER CRASH MUSIC ALMERIA | migrado | ejecución 49596 correcta · 27 eventos · Firecrawl no se ejecutó |
 | SCRAPPER WEGOW ALMERIA | fuera de Firecrawl | 24/08/2026 · pasa a la **API pública** de Wegow, sin render: ni local ni Firecrawl. Ver `wegow_api_publica.md` |
+| SCRAPPER FLOWTE | migrado 25/09/2026 | webhook de prueba, ejecución 69950 correcta · Firecrawl no se ejecutó (2 nodos) |
+| COMPROBACION TAQUILLA | migrado 25/09/2026 | webhook de prueba, correcta · 10 items · Firecrawl no se ejecutó |
+| SCRAPPER SIENTE LA PLAZA ALMERIA | migrado 25/09/2026 | webhook de prueba, correcta · Firecrawl no se ejecutó (3 nodos: Listado/Detalle/Enterticket) |
+| SCRAPPER EMMA | migrado 25/09/2026 | webhook de prueba, correcta · Firecrawl no se ejecutó |
+| SCRAPPER ALMERIA CIUDAD | migrado 25/09/2026 | webhook de prueba, correcta · 2 eventos · Firecrawl no se ejecutó (Listado y Detalle) |
+| SCRAPPER FEVERUP | migrado 25/09/2026 | webhook de prueba, correcta · Firecrawl no se ejecutó |
+| SCRAPPER SALA BERLIN | migrado 25/09/2026 | webhook de prueba, correcta · 2 eventos · Firecrawl no se ejecutó |
+| SCRAPPER LA VOZ ALMERIA | migrado 25/09/2026 | webhook de prueba, correcta · Firecrawl no se ejecutó |
+| SCRAPPER ENTRADAS COM ALMERIA | migrado 25/09/2026 | webhook de prueba, correcta · listado por sitemap (ya sin Firecrawl), 0 pendientes de detalle en el ciclo · Firecrawl no se ejecutó |
 
 Los backups de los dos primeros, antes del cambio, quedaron en el scratchpad de la
 sesión (`clasijazz.BACKUP.json`, `crash.BACKUP.json`). A partir de Wegow, los scripts
 de `scripts/` guardan el backup solos en `backups/`.
+
+**25/09/2026 — tanda grande, con un fix al script:** `migrar_scraper_local_primero.py`
+no filtraba `settings` antes del PUT y la API lo rechazaba con `400 Bad Request`
+(mismo problema ya documentado más abajo, "Ojo con el `settings`") — el primer intento
+con FLOWTE falló así, **sin llegar a tocar el workflow** (el PUT falló antes de
+aplicarse). Arreglado copiando el filtro `SETTINGS_OK` que ya usaba
+`migrar_wegow_a_api.py`. Las 9 migraciones de esta tanda se verificaron disparando el
+webhook `*-trigger-test` de cada workflow y comprobando en `/executions` que (a)
+`status: success`, (b) el nodo Firecrawl no aparece en `runData` (no se ejecutó), y
+(c) los nodos con datos de verdad (Listado/Detalle) devolvieron items > 0, no una
+lista vacía sospechosa (el fallo silencioso ya documentado abajo).
+
+**Quedan sin migrar, deliberadamente:**
+- `SCRAPPER ECI ALMERIA` y `SCRAPPER IG PERFILES (imginn)`: no tienen ningún nodo
+  local emparejado por rama de error (`Firecrawl 100%`, sin red de seguridad) — el
+  script no tiene nada que invertir. Necesitan que alguien AÑADA el fallback primero,
+  no solo reordenar. IG PERFILES además depende del caso Instagram/imginn, que se
+  resolverá aparte con una cuenta real + bridge Playwright (mismo patrón que
+  `social-review/backend/scripts/fb_bridge/` para Facebook), no con el 8021.
+- `SCRAPPER KUVER PRODUCCIONES` y `SCRAPPER CLASIJAZZ HISTORICO 2026`: `active=false`,
+  no están en producción ahora mismo — se dejan tal cual hasta que se reactiven.
 
 > **Antes de migrar, mirar si la fuente tiene API.** Wegow salió del render entero
 > porque la tenía y era pública. Sale más barato y más fiable que cualquier scraper:
