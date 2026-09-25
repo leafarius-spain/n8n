@@ -67,11 +67,20 @@ webhook `*-trigger-test` de cada workflow y comprobando en `/executions` que (a)
 lista vacía sospechosa (el fallo silencioso ya documentado abajo).
 
 **Quedan sin migrar, deliberadamente:**
-- `SCRAPPER ECI ALMERIA` y `SCRAPPER IG PERFILES (imginn)`: no tienen ningún nodo
-  local emparejado por rama de error (`Firecrawl 100%`, sin red de seguridad) — el
-  script no tiene nada que invertir. Necesitan que alguien AÑADA el fallback primero,
-  no solo reordenar. IG PERFILES además depende del caso Instagram/imginn, que se
-  resolverá aparte con una cuenta real + bridge Playwright (mismo patrón que
+- `SCRAPPER ECI ALMERIA` (El Corte Inglés) — **desactivado el 25/09/2026 en vez de
+  migrado**. `elcorteingles.es/entradas` con proxy stealth, sin fallback local (el
+  script no tenía nada que invertir). Antes de darle un fallback se midió cuánta
+  información única aportaba en `cancerbero-eventos.raw_front_eventos`: **15 eventos
+  capturados en 4 meses (23/05→24/09), 5 en el último mes**, y de esos 15, **14 ya
+  llegaban por otras fuentes** ya cubiertas (Sala Berlín/Crash Music, Enterticket/
+  Siente la Plaza/Taquilla/Tomaticket/Weeky, Qconciertos, Turismo/Instagram) — el
+  único que no se repetía era una visita guiada a la catedral, sin derechos SGAE.
+  Información prácticamente nula: no compensaba el esfuerzo de darle fallback ni
+  seguir pagando Firecrawl por él. `active=false` vía API, reversible si hiciera
+  falta reactivarlo.
+- `SCRAPPER IG PERFILES (imginn)`: mismo caso de "sin fallback que invertir", pero
+  este SÍ se queda activo — depende del caso Instagram/imginn, que se resolverá
+  aparte con una cuenta real + bridge Playwright (mismo patrón que
   `social-review/backend/scripts/fb_bridge/` para Facebook), no con el 8021.
 - `SCRAPPER KUVER PRODUCCIONES` y `SCRAPPER CLASIJAZZ HISTORICO 2026`: `active=false`,
   no están en producción ahora mismo — se dejan tal cual hasta que se reactiven.
