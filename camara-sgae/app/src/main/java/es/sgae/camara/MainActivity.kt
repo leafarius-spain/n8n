@@ -37,6 +37,11 @@ import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.camera.view.PreviewView
+import androidx.work.Constraints
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
@@ -63,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private var modoVideo = false
     private var codigo: String? = null
     private var retorno: String? = null
+    private var subida: String? = null
 
     private val fechaFmt = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
     private val horaFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
@@ -97,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         modoVideo = u.getQueryParameter("modo") == "video"
         codigo = u.getQueryParameter("codigo")
         retorno = u.getQueryParameter("retorno")
+        subida = u.getQueryParameter("subida")
     }
 
     private fun construirUi() {
@@ -246,9 +253,28 @@ class MainActivity : AppCompatActivity() {
         actualizarBotones()
     }
 
+    /** Sube a Julietta en segundo plano; reintenta solo si no hay red. */
+    private fun encolarSubida(uri: Uri, tipo: String) {
+        val url = subida ?: BuildConfig.UPLOAD_URL
+        if (url.isBlank()) return
+        val req = OneTimeWorkRequestBuilder<UploadWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInputData(workDataOf(
+                UploadWorker.K_URI to uri.toString(),
+                UploadWorker.K_TIPO to tipo,
+                UploadWorker.K_CODIGO to codigo,
+                UploadWorker.K_URL to url,
+                UploadWorker.K_LAT to geo.location?.latitude,
+                UploadWorker.K_LON to geo.location?.longitude,
+            ))
+            .build()
+        WorkManager.getInstance(this).enqueue(req)
+    }
+
     /** Si Julietta pasó `retorno`, se vuelve a ella con la ruta del archivo; si no, se queda aquí. */
     private fun terminar(uri: Uri?, tipo: String) {
         Toast.makeText(this, "Guardado: $tipo", Toast.LENGTH_SHORT).show()
+        if (uri != null) encolarSubida(uri, tipo)
         val base = retorno ?: return
         val destino = Uri.parse(base).buildUpon()
             .appendQueryParameter("archivo", uri.toString())
